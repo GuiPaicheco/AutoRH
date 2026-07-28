@@ -1,9 +1,9 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Resiliência & Modo Debug de Diagnóstico)
+ * Importador de Planilhas - app.js (Arquitetura Estrita pós-passo 4 + Modo Debug)
  * ----------------------------------------------------------------------------
  * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, escolha do
- * tipo de planilha, tratamento robusto via pipeline e diagnóstico avançado.
+ * tipo de planilha, tratamento via pipeline e diagnóstico avançado.
  * 
  * Arquitetura em Módulos:
  * 1. Mapeamento & Utilidades (Header Normalization & Number Utilities)
@@ -64,8 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const debugContext = {
         rawRowsCount: 0,
         rawColsCount: 0,
-        originalHeaders: [],
-        normalizedHeaders: [],
+        officialPostStep4Headers: [],
         removedTopRowsCount: 0,
         removedBottomRowsCount: 0,
         removedEmptyColsCount: 0,
@@ -176,21 +175,16 @@ document.addEventListener('DOMContentLoaded', () => {
         let str = String(val).trim();
         if (str === '') return 0;
 
-        // Trata formato de moeda/número brasileiro ou americano
         if (str.includes(',') && str.includes('.')) {
-            // "1.250,50" -> remove o ponto de milhar e troca a vírgula decimal por ponto
             if (str.indexOf('.') < str.indexOf(',')) {
                 str = str.replace(/\./g, '').replace(',', '.');
             } else {
-                // "1,250.50" -> formato americano
                 str = str.replace(/,/g, '');
             }
         } else if (str.includes(',')) {
-            // "1250,50" -> troca vírgula por ponto
             str = str.replace(',', '.');
         }
 
-        // Remove R$, espaços e caracteres não numéricos exceto hífen (negativo) e ponto
         str = str.replace(/[^\d.-]/g, '');
 
         const parsed = parseFloat(str);
@@ -213,8 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function resetDebugContext() {
         debugContext.rawRowsCount = 0;
         debugContext.rawColsCount = 0;
-        debugContext.originalHeaders = [];
-        debugContext.normalizedHeaders = [];
+        debugContext.officialPostStep4Headers = [];
         debugContext.removedTopRowsCount = 0;
         debugContext.removedBottomRowsCount = 0;
         debugContext.removedEmptyColsCount = 0;
@@ -248,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
-                    <span><strong>Aviso de Diagnóstico:</strong> Coluna esperada não encontrada na planilha: <code>${missingCol}</code></span>
+                    <span><strong>Aviso de Diagnóstico:</strong> Coluna esperada não encontrada na 1ª linha pós-limpeza: <code>${missingCol}</code></span>
                 `;
                 debugWarningsContainer.appendChild(warnCard);
             });
@@ -268,15 +261,14 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // --- C. Card 2: Mapeamento & Normalização de Cabeçalhos ---
+        // --- C. Card 2: Cabeçalhos Oficiais Encontrados na 1ª Linha pós-Passo 4 ---
         const cardHeaders = document.createElement('div');
         cardHeaders.className = 'debug-card';
-        const normItems = debugContext.normalizedHeaders.map((norm, idx) => {
-            const orig = debugContext.originalHeaders[idx] || '';
-            return `<div><strong>${getExcelColumnName(idx)}:</strong> "${orig}" ➔ <code>"${norm}"</code></div>`;
+        const normItems = debugContext.officialPostStep4Headers.map(item => {
+            return `<div><strong>Coluna ${item.letter}:</strong> "${item.original}" ➔ <code>"${item.normalized}"</code></div>`;
         }).join('');
         cardHeaders.innerHTML = `
-            <div class="debug-card-title">2. Normalização de Cabeçalhos</div>
+            <div class="debug-card-title">2. Cabeçalhos da 1ª Linha (Pós-Passo 4)</div>
             <div class="debug-log-box">${normItems || 'Nenhum cabeçalho identificado'}</div>
         `;
 
@@ -296,9 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- E. Card 4: Renomeações & Agrupamentos ---
         const cardRenames = document.createElement('div');
         cardRenames.className = 'debug-card';
-        const renameLogs = debugContext.renamedColsLog.map(item => `<div>• <code>${item.original}</code> ➔ <strong>${item.renamed}</strong></div>`).join('');
+        const renameLogs = debugContext.renamedColsLog.map(item => `<div>• Coluna ${item.letter}: <code>"${item.original}"</code> ➔ <strong>${item.renamed}</strong></div>`).join('');
         cardRenames.innerHTML = `
-            <div class="debug-card-title">4. Renomeação & Agrupamento</div>
+            <div class="debug-card-title">4. Renomeação da 1ª Linha</div>
             <div class="debug-log-box">${renameLogs || 'Nenhuma coluna renomeada'}</div>
         `;
 
@@ -399,20 +391,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Regra 5: Padronização dos nomes das colunas com comparações normalizadas e robustas.
+     * Inspeção Estrita e Registro dos Cabeçalhos Encontrados na 1ª Linha Pós-Passo 4.
+     * Imprime no console e registra no contexto de diagnóstico.
+     * 
+     * @param {Array<Array<any>>} matrix 
+     * @returns {Array<Array<any>>} Matriz inalterada
+     */
+    function inspectAndLogOfficialHeaders(matrix) {
+        if (!matrix || matrix.length === 0) return matrix;
+
+        const officialRow = matrix[0] || [];
+        debugContext.officialPostStep4Headers = [];
+
+        console.log("%c[SIGA Pipeline] Cabeçalhos encontrados na 1ª linha tratada (Pós-Passo 4):", "color: #2563eb; font-weight: bold; font-size: 13px;");
+
+        officialRow.forEach((cellVal, colIdx) => {
+            const letter = getExcelColumnName(colIdx);
+            const originalVal = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+            const normVal = normalizeHeaderName(originalVal);
+
+            console.log(`  Coluna ${letter} (índice ${colIdx}) ➔ "${originalVal}" [Normalizado: "${normVal}"]`);
+
+            debugContext.officialPostStep4Headers.push({
+                letter: letter,
+                colIndex: colIdx,
+                original: originalVal,
+                normalized: normVal
+            });
+        });
+
+        return matrix;
+    }
+
+    /**
+     * Regra 5: Padronização dos Nomes das Colunas utilizando EXCLUSIVAMENTE a 1ª linha pós-Passo 4.
+     * 
+     * @param {Array<Array<any>>} matrix 
+     * @param {Object} nameMap 
+     * @returns {Array<Array<any>>}
      */
     function standardizeHeaderNamesRule(matrix, nameMap = COLUMN_NAME_MAP) {
         if (!matrix || matrix.length === 0) return [];
 
         const updatedMatrix = matrix.map(row => [...row]);
-        const headerRow = updatedMatrix[0] || [];
+        const officialHeaderRow = updatedMatrix[0] || [];
 
-        debugContext.originalHeaders = [...headerRow];
-        debugContext.normalizedHeaders = headerRow.map(h => normalizeHeaderName(h));
         debugContext.renamedColsLog = [];
         debugContext.missingExpectedCols = [];
 
-        // Prepara o dicionário de busca com chaves normalizadas
+        // Monta dicionário normalizado para comparação imune a maiúsculas/espaços/quebras
         const normalizedMap = {};
         Object.keys(nameMap).forEach(key => {
             normalizedMap[normalizeHeaderName(key)] = nameMap[key];
@@ -420,11 +447,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const foundNormalizedKeys = new Set();
 
-        const newHeaderRow = headerRow.map(cell => {
+        const newHeaderRow = officialHeaderRow.map((cell, colIdx) => {
             const normCell = normalizeHeaderName(cell);
+            const letter = getExcelColumnName(colIdx);
+
             if (normalizedMap[normCell]) {
                 const newName = normalizedMap[normCell];
                 debugContext.renamedColsLog.push({
+                    letter: letter,
                     original: String(cell).trim(),
                     renamed: newName
                 });
@@ -434,11 +464,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return cell;
         });
 
-        // Identifica quais colunas mapeadas esperadas NÃO foram encontradas
+        // Identifica no console e no Modo Debug se alguma coluna esperada esteve ausente na 1ª linha
         Object.keys(COLUMN_NAME_MAP).forEach(key => {
             const normKey = normalizeHeaderName(key);
             if (!foundNormalizedKeys.has(normKey)) {
                 debugContext.missingExpectedCols.push(key);
+                console.warn(`[SIGA Pipeline Warning] Coluna esperada não encontrada na 1ª linha tratada: "${key}"`);
             }
         });
 
@@ -446,13 +477,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return updatedMatrix;
     }
 
+    /**
+     * Sequência Oficial Estrita do Pipeline da Planilha do SIGA.
+     */
     const SPREADSHEET_PIPELINES = {
         siga: [
-            (matrix) => removeTopRowsRule(matrix, 3),                                        // Regra 1
-            (matrix) => removeEmptyColumnsRule(matrix),                                       // Regra 2
-            (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // Regra 3
-            (matrix) => removeBottomRowsRule(matrix, 2),                                      // Regra 4
-            (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)                   // Regra 5
+            (matrix) => removeTopRowsRule(matrix, 3),                                        // 1. Remover 3 primeiras linhas
+            (matrix) => removeEmptyColumnsRule(matrix),                                       // 2. Remover colunas 100% vazias
+            (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // 3. Remover colunas J, I, H, G, A
+            (matrix) => removeBottomRowsRule(matrix, 2),                                      // 4. Remover 2 últimas linhas
+            (matrix) => inspectAndLogOfficialHeaders(matrix),                                // Inspeção & Log dos Cabeçalhos da 1ª Linha Resultante
+            (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)                   // 5. Renomear Nomes das Colunas na 1ª Linha
         ],
         relatorio: []
     };
@@ -469,6 +504,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. MÓDULO DO RESUMO FINANCEIRO (Financial Summary Engine)
     // ------------------------------------------------------------------------
 
+    /**
+     * Regra 6: Agrupamento Automático e Cálculo dos Totais.
+     * Utiliza EXCLUSIVAMENTE os cabeçalhos presentes na 1ª linha da matriz tratada pós-Passo 5.
+     * 
+     * @param {Array<Array<any>>} matrix 
+     * @returns {Object}
+     */
     function calculateFinancialSummary(matrix) {
         if (!matrix || matrix.length <= 1) return {};
 
@@ -565,15 +607,15 @@ document.addEventListener('DOMContentLoaded', () => {
         appState.selectedType = 'siga';
         closeTypeModal();
 
-        // 1. Executa o pipeline de tratamento do SIGA (Regras 1 a 5)
+        // 1. Executa o pipeline de tratamento do SIGA (Passos 1 a 5, com inspeção na 1ª linha)
         const treated = runTreatmentPipeline('siga', appState.rawMatrixData);
         appState.treatedMatrixData = treated;
 
-        // 2. Calcula o Resumo Financeiro (Regra 6)
+        // 2. Calcula o Resumo Financeiro (Regra 6) a partir da 1ª linha da matriz tratada
         const summaryData = calculateFinancialSummary(treated);
         appState.summaryData = summaryData;
 
-        // 3. Renderiza o Modo Debug, Cartões e Tabela
+        // 3. Renderiza os cartões de resumo, tabela e painel debug
         renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
         renderDebugPanel();
@@ -591,7 +633,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dropZone.addEventListener('dragleave', handleDragLeave);
         dropZone.addEventListener('drop', handleDrop);
 
-        // Evento de Alternância do Modo Debug
         btnToggleDebug.addEventListener('click', () => {
             appState.isDebugMode = !appState.isDebugMode;
             btnToggleDebug.classList.toggle('active', appState.isDebugMode);
@@ -711,7 +752,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     resetDebugContext();
                     appState.rawMatrixData = rawMatrix;
 
-                    // Registra estatísticas iniciais de diagnóstico
                     debugContext.rawRowsCount = rawMatrix.length;
                     let maxCols = 0;
                     rawMatrix.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
