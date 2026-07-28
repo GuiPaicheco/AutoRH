@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Importador de Planilhas (Tela Resultado & Módulo Temporal)
+   Importador de Planilhas (Catálogo Oficial & Cruzamento Relatório ➔ Drive)
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -40,9 +40,6 @@
     --status-success-bg: #dcfce7;
     --status-pending: #d97706;
     --status-pending-bg: #fef3c7;
-    
-    --border-color: #e2e8f0;
-    --border-dark: #cbd5e1;
     
     --danger-color: #ef4444;
     --danger-light: #fef2f2;
@@ -1053,6 +1050,27 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: cell;
+}
+
+/* --------------------------------------------------------------------------
+   ESTILOS VISUAIS PARA O CRUZAMENTO DE CÉLULAS DA TELA RESULTADO
+   -------------------------------------------------------------------------- */
+.excel-table td.cell-match {
+    background-color: #dcfce7 !important;
+    color: #15803d !important;
+    font-weight: 600;
+}
+
+.excel-table td.cell-missing {
+    background-color: #ffedd5 !important;
+    color: #c2410c !important;
+    font-weight: 600;
+}
+
+.excel-table td.cell-divergent {
+    background-color: #fee2e2 !important;
+    color: #b91c1c !important;
+    font-weight: 600;
 }
 
 .excel-table tbody tr:nth-child(even) td {

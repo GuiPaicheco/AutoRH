@@ -1,14 +1,11 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Infraestrutura da Tela Resultado)
+ * Importador de Planilhas - app.js (Catálogo Oficial & Cruzamento Relatório ➔ Drive)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) com fluxo de 5 Etapas.
- * 
- * Processador Final (FinalProcessor):
- * - Recebe os dados das 3 fontes (Relatório, Coleção SIGA e Drive)
- * - Encaminha a matriz tratada da Planilha de Relatório como matriz base
- *   da Tela Resultado (sem realizar cruzamentos nesta versão)
- * - Prepara a estrutura para futuras substituições de células
+ * Mapeamento oficial centralizado e estrito (sem IA/heurísticas).
+ * Cruzamento matemático entre Planilha de Relatório e Planilha do Drive.
+ * Células recebem status interno (MATCH, MISSING, DIVERGENT, NOT_MAPPED) e
+ * destaque visual suave na Tela Resultado sem alterar os valores do Relatório.
  * ============================================================================
  */
 
@@ -89,7 +86,48 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 1. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
+    // 1. CATÁLOGO OFICIAL DE CORRESPONDÊNCIAS (CENTRALIZADO & ESTRITO)
+    // ------------------------------------------------------------------------
+
+    const REPORT_TO_DRIVE_MAP = {
+        "Gases Medicinais": "GASES MEDICINAIS (sala procedimentos)",
+        "Gás Engarrafado GLP": "GÁS GLP (gerência)",
+        "Material de Limpeza": "MATERIAL DE LIMPEZA (condomínio)",
+        "Material de Proteção e Segurança": "MATERIAL DE PROTEÇÃO E SEGURANÇA (ODONTO) (dividir pelas equipes)",
+        "Vacinas": "VACINAS (sala vacinas)",
+        "Aluguel de Veículos": "ALUGUEL DE VEÍCULOS (gerência)",
+        "Serviço de Lavanderia": "SERVIÇO DE LAVANDERIA (condomínio)",
+        "Serviços de Controle de Vetores e Pragas Urbanas": "SERVIÇO DE CONTROLE DE VETORES E PRAGAS URBANAS (condomínio)",
+        "Serviços de Cópias e Reprodução de Documentos": "SERVIÇOS DE CÓPIAS E REPRODUÇÃO DE DOCUMENTOS (gerência)",
+        "Serviços de Limpeza e Conservação": "SERVIÇOS DE LIMPEZA E CONSERVAÇÃO (condomínio)",
+        "Serviços de Tecnologia da Informação": "SERVIÇOS DE TECNOLOGIA DA INFORMAÇÃO (SISTEMA MV) (gerência)",
+        "Serviços Laboratoriais": "SERVIÇOS LABORATORIAIS - CUSTO (Laboratório de Análises Clínicas)",
+        "Serviço de Água e Esgoto": "SERVIÇO DE ÁGUA E ESGOTO (condomínio)",
+        "Serviços de Comunicação de Dados (internet e outros)": "SERVIÇOS DE COMUNICAÇÃO DE DADOS (INTERNET E OUTROS) (gerência)",
+        "Serviços de Energia Elétrica": "SERVIÇO DE ENERGIA ELÉTRICA (condomínio)",
+        "Serviços de Telecomunicações (Fixa)": "SERVIÇOS DE TELECOMUNICAÇÕES (TELEFONIA FIXA) (gerência)",
+        "Serviços de Telecomunicações - (Telefonia Móvel)": "SERVIÇOS DE TELECOMUNICAÇÕES (TELEFONIA MÓVEL) (gerência)"
+    };
+
+    const OfficialCatalog = {
+        getDriveMapping(reportItemName) {
+            if (!reportItemName) return null;
+            const normReportName = normalizeHeaderName(reportItemName);
+            for (const [repKey, drvVal] of Object.entries(REPORT_TO_DRIVE_MAP)) {
+                if (normalizeHeaderName(repKey) === normReportName) {
+                    return drvVal;
+                }
+            }
+            return null;
+        },
+
+        getAllMappingsCount() {
+            return Object.keys(REPORT_TO_DRIVE_MAP).length;
+        }
+    };
+
+    // ------------------------------------------------------------------------
+    // 2. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
     // ------------------------------------------------------------------------
 
     const appSession = {
@@ -109,9 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * MÓDULO PROCESSADOR FINAL (FinalProcessor)
-     * Recebe os dados tratados de Relatório, Coleção SIGA e Drive.
-     * Encaminha a matriz do Relatório como matriz base para a Tela Resultado
-     * e monta o Inspector do Resultado.
+     * Realiza o cruzamento de valores entre a Planilha de Relatório e a Planilha do Drive
+     * utilizando exclusivamente o Catálogo Oficial de Correspondências.
      */
     const FinalProcessor = {
         isReady: false,
@@ -119,10 +156,11 @@ document.addEventListener('DOMContentLoaded', () => {
         sigaCollectionData: null,
         driveData: null,
         resultMatrix: [],
+        cellStatusMap: {},
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Processando dados recebidos do Relatório, Coleção SIGA e Drive...", "color: #059669; font-weight: bold; font-size: 13px;");
+            console.log("%c[FinalProcessor] Executando cruzamento entre Relatório e Drive via Catálogo Oficial...", "color: #059669; font-weight: bold; font-size: 13px;");
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -131,11 +169,139 @@ document.addEventListener('DOMContentLoaded', () => {
 
             this.reportData = sessionObj.reportMatrix;
             this.sigaCollectionData = sessionObj.sigaCollection;
-            this.driveData = sessionObj.driveMatrix;
+            this.driveData = sessionObj.driveMatrix || [];
 
-            // Clonagem profunda da matriz do Relatório tratada para ser a base do Resultado
             this.resultMatrix = this.reportData.map(row => [...row]);
+            this.cellStatusMap = {};
             this.isReady = true;
+
+            const reportHeaderRow = this.reportData[0] || [];
+            const driveHeaderRow = this.driveData[0] || [];
+
+            let totalComparisons = 0;
+            let countMatch = 0;
+            let countMissing = 0;
+            let countDivergent = 0;
+            let countNotMapped = 0;
+            let mappedCountInFile = 0;
+
+            const itemsClassification = {
+                MATCH: [],
+                MISSING: [],
+                DIVERGENT: [],
+                NOT_MAPPED: []
+            };
+
+            for (let rIdx = 1; rIdx < this.reportData.length; rIdx++) {
+                const reportItemName = this.reportData[rIdx][0] !== undefined && this.reportData[rIdx][0] !== null 
+                    ? String(this.reportData[rIdx][0]).trim() 
+                    : '';
+
+                if (reportItemName === '') continue;
+
+                const mappedDriveName = OfficialCatalog.getDriveMapping(reportItemName);
+
+                if (!mappedDriveName) {
+                    countNotMapped++;
+                    itemsClassification.NOT_MAPPED.push(reportItemName);
+
+                    for (let cIdx = 1; cIdx < reportHeaderRow.length; cIdx++) {
+                        this.cellStatusMap[`${rIdx}_${cIdx}`] = 'NOT_MAPPED';
+                    }
+                    continue;
+                }
+
+                mappedCountInFile++;
+
+                let driveRowIdx = -1;
+                const normMappedDriveName = normalizeHeaderName(mappedDriveName);
+
+                for (let dR = 1; dR < this.driveData.length; dR++) {
+                    const driveItemName = this.driveData[dR][0] !== undefined && this.driveData[dR][0] !== null
+                        ? String(this.driveData[dR][0]).trim()
+                        : '';
+                    if (normalizeHeaderName(driveItemName) === normMappedDriveName) {
+                        driveRowIdx = dR;
+                        break;
+                    }
+                }
+
+                let rowMatches = 0;
+                let rowMissing = 0;
+                let rowDivergent = 0;
+
+                for (let cIdx = 1; cIdx < reportHeaderRow.length; cIdx++) {
+                    totalComparisons++;
+                    const monthCell = reportHeaderRow[cIdx];
+                    const parsedMonth = TemporalEngine.parseMonthYear(monthCell);
+
+                    if (!parsedMonth) {
+                        this.cellStatusMap[`${rIdx}_${cIdx}`] = 'NOT_MAPPED';
+                        continue;
+                    }
+
+                    const targetDriveIndex = TemporalEngine.converterMesParaIndice(parsedMonth.mes, parsedMonth.ano);
+
+                    let driveColIdx = -1;
+                    if (driveRowIdx !== -1) {
+                        for (let dC = 1; dC < driveHeaderRow.length; dC++) {
+                            const numVal = parseNumericValue(driveHeaderRow[dC]);
+                            if (numVal === targetDriveIndex) {
+                                driveColIdx = dC;
+                                break;
+                            }
+                        }
+                    }
+
+                    const rawRepVal = this.reportData[rIdx][cIdx];
+                    const repVal = parseNumericValue(rawRepVal);
+                    const isRepEmptyCell = isCellEmpty(rawRepVal);
+
+                    let driveVal = 0;
+                    let isDriveEmptyCell = true;
+                    if (driveRowIdx !== -1 && driveColIdx !== -1) {
+                        const rawDrvVal = this.driveData[driveRowIdx][driveColIdx];
+                        driveVal = parseNumericValue(rawDrvVal);
+                        isDriveEmptyCell = isCellEmpty(rawDrvVal);
+                    }
+
+                    let cellStatus = 'NOT_MAPPED';
+
+                    if (driveRowIdx !== -1 && driveColIdx !== -1) {
+                        const isValueEqual = Math.abs(repVal - driveVal) < 0.01;
+
+                        if (isValueEqual && (!isRepEmptyCell || !isDriveEmptyCell)) {
+                            cellStatus = 'MATCH';
+                            countMatch++;
+                            rowMatches++;
+                        } else if (isRepEmptyCell && !isDriveEmptyCell && driveVal > 0) {
+                            cellStatus = 'MISSING';
+                            countMissing++;
+                            rowMissing++;
+                        } else if (!isRepEmptyCell && !isDriveEmptyCell && !isValueEqual) {
+                            cellStatus = 'DIVERGENT';
+                            countDivergent++;
+                            rowDivergent++;
+                        } else {
+                            cellStatus = 'NOT_MAPPED';
+                            countNotMapped++;
+                        }
+                    } else {
+                        cellStatus = 'NOT_MAPPED';
+                        countNotMapped++;
+                    }
+
+                    this.cellStatusMap[`${rIdx}_${cIdx}`] = cellStatus;
+                }
+
+                if (rowDivergent > 0) {
+                    itemsClassification.DIVERGENT.push({ reportItem: reportItemName, driveItem: mappedDriveName });
+                } else if (rowMissing > 0) {
+                    itemsClassification.MISSING.push({ reportItem: reportItemName, driveItem: mappedDriveName });
+                } else if (rowMatches > 0) {
+                    itemsClassification.MATCH.push({ reportItem: reportItemName, driveItem: mappedDriveName });
+                }
+            }
 
             const firstRow = this.resultMatrix[0] || [];
             const lastRow = this.resultMatrix.length > 0 ? this.resultMatrix[this.resultMatrix.length - 1] : [];
@@ -161,14 +327,52 @@ document.addEventListener('DOMContentLoaded', () => {
                     matrix: this.resultMatrix,
                     extraInfo: {
                         dataSource: "Planilha de Relatório tratada (via Processador Final)",
-                        crossReferenceStatus: "Nenhum cruzamento realizado nesta versão (Base fiel do Relatório)"
+                        crossReferenceStatus: "Cruzamento com o Drive realizado exclusivamente via Catálogo Oficial"
+                    }
+                },
+                {
+                    stepNum: 2,
+                    stepTitle: "Catálogo Oficial de Correspondências",
+                    rowCount: this.reportData.length,
+                    colCount: maxCols,
+                    firstRow: firstRow.map(c => String(c || '').trim()),
+                    lastRow: lastRow.map(c => String(c || '').trim()),
+                    colHeaders: colHeadersWithIndices,
+                    matrix: this.resultMatrix,
+                    extraInfo: {
+                        catalogDetails: {
+                            totalCatalogEntries: OfficialCatalog.getAllMappingsCount(),
+                            matchedInFile: mappedCountInFile,
+                            unmappedCount: countNotMapped,
+                            totalComparisons: totalComparisons
+                        }
+                    }
+                },
+                {
+                    stepNum: 3,
+                    stepTitle: "Comparação com a Planilha do Drive",
+                    rowCount: this.resultMatrix.length,
+                    colCount: maxCols,
+                    firstRow: firstRow.map(c => String(c || '').trim()),
+                    lastRow: lastRow.map(c => String(c || '').trim()),
+                    colHeaders: colHeadersWithIndices,
+                    matrix: this.resultMatrix,
+                    extraInfo: {
+                        comparisonSummary: {
+                            matchCount: countMatch,
+                            missingCount: countMissing,
+                            divergentCount: countDivergent,
+                            notMappedCount: countNotMapped,
+                            itemsClassification: itemsClassification
+                        }
                     }
                 }
             ];
 
             const resultLogs = [
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Dados recebidos do Processador Final.", isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: "✔ Nenhum cruzamento realizado.", isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Catálogo Oficial consultado (${OfficialCatalog.getAllMappingsCount()} regras registradas).`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação com a Planilha do Drive concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Resultado exibido com sucesso.", isSuccess: true }
             ];
 
@@ -190,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentInspectorTimelineLogs = [];
 
     // ------------------------------------------------------------------------
-    // 2. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
+    // 3. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
     // ------------------------------------------------------------------------
 
     const TEMPORAL_REFERENCE = {
@@ -269,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 3. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
+    // 4. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -391,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 5. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -507,6 +711,52 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="step-info-value">${step.extraInfo.crossReferenceStatus}</span>
                     </div>
                 `;
+            }
+
+            if (step.extraInfo && step.extraInfo.catalogDetails) {
+                const c = step.extraInfo.catalogDetails;
+                detailsBlock.innerHTML += `
+                    <div class="step-info-row">
+                        <span class="step-info-label">Itens Mapeados no Catálogo:</span>
+                        <span class="step-info-value">${c.totalCatalogEntries} regras cadastradas</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Correspondências Encontradas:</span>
+                        <span class="step-info-value">${c.matchedInFile} itens mapeados</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Itens Não Mapeados:</span>
+                        <span class="step-info-value">${c.unmappedCount} itens</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Comparações Realizadas:</span>
+                        <span class="step-info-value">${c.totalComparisons} células de meses</span>
+                    </div>
+                `;
+            }
+
+            if (step.extraInfo && step.extraInfo.comparisonSummary) {
+                const s = step.extraInfo.comparisonSummary;
+                detailsBlock.innerHTML += `
+                    <div class="step-info-row">
+                        <span class="step-info-label">Resumo dos Status:</span>
+                        <span class="step-info-value">🟢 MATCH: ${s.matchCount} | 🟠 MISSING: ${s.missingCount} | 🔴 DIVERGENT: ${s.divergentCount} | ⚪ NOT_MAPPED: ${s.notMappedCount}</span>
+                    </div>
+                `;
+
+                if (s.itemsClassification) {
+                    const matchItemsStr = s.itemsClassification.MATCH.map(i => `${i.reportItem} ➔ ${i.driveItem}`).join(', ') || 'Nenhum';
+                    const divItemsStr = s.itemsClassification.DIVERGENT.map(i => `${i.reportItem} ➔ ${i.driveItem}`).join(', ') || 'Nenhum';
+                    const missItemsStr = s.itemsClassification.MISSING.map(i => `${i.reportItem} ➔ ${i.driveItem}`).join(', ') || 'Nenhum';
+
+                    detailsBlock.innerHTML += `
+                        <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem;">
+                            <div><b>🟢 Itens com MATCH Total:</b> <span class="step-info-value">${matchItemsStr}</span></div>
+                            <div><b>🔴 Itens DIVERGENTES:</b> <span class="step-info-value">${divItemsStr}</span></div>
+                            <div><b>🟠 Itens MISSING (Faltantes):</b> <span class="step-info-value">${missItemsStr}</span></div>
+                        </div>
+                    `;
+                }
             }
 
             if (step.stepNum === 1 && step.extraInfo.fileName) {
@@ -758,7 +1008,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 5. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 6. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -981,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. MÓDULO DO RESUMO FINANCEIRO (SIGA)
+    // 7. MÓDULO DO RESUMO FINANCEIRO (SIGA)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -1091,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 7. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
+    // 8. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -1420,7 +1670,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * ETAPA 2 DO WIZARD: Importar Múltiplos Arquivos do SIGA (Coleção Multiarquivos)
+     * ETAPA 2 DO WIZARD: Importar Múltiplos Arquivos do SIGA
      */
     function processSigaStep(file, rawMatrix) {
         resetInspectorData();
@@ -1594,7 +1844,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 8. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 9. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function viewReportSheetInTable() {
@@ -1658,7 +1908,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentInspectorTimelineLogs = FinalProcessor.resultInspector.timelineLogs;
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final)";
-        inspectorSheetSubtitle.textContent = "Dados processados e encaminhados pelo Processador Final (Base do Relatório).";
+        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive via Catálogo Oficial de Correspondências.";
 
         summaryContainer.classList.add('hidden');
         renderSpreadsheetTable(FinalProcessor.resultMatrix);
@@ -1765,6 +2015,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         FinalProcessor.isReady = false;
         FinalProcessor.resultMatrix = [];
+        FinalProcessor.cellStatusMap = {};
 
         resetInspectorData();
 
@@ -1834,7 +2085,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 10. RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 10. RENDERIZAÇÃO DA TABELA (Table Renderer COM DESTAQUE VISUAL DE CÉLULAS)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -1893,22 +2144,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const bodyRows = matrix.slice(1);
         const fragment = document.createDocumentFragment();
 
+        const isResultView = appSession.activeViewSheet === 'result';
+
         bodyRows.forEach((rowData, rowIdx) => {
+            const actualRowIdx = rowIdx + 1;
             const tr = document.createElement('tr');
-            tr.dataset.rowIndex = rowIdx + 1;
+            tr.dataset.rowIndex = actualRowIdx;
 
             const thRowIndex = document.createElement('th');
             thRowIndex.className = 'row-index';
-            thRowIndex.textContent = rowIdx + 1;
+            thRowIndex.textContent = actualRowIdx;
             tr.appendChild(thRowIndex);
 
             for (let colIdx = 0; colIdx < maxCols; colIdx++) {
                 const td = document.createElement('td');
                 td.dataset.colIndex = colIdx;
-                td.dataset.rowIndex = rowIdx + 1;
+                td.dataset.rowIndex = actualRowIdx;
 
                 const cellValue = rowData[colIdx];
                 td.textContent = cellValue !== undefined && cellValue !== null ? cellValue : '';
+
+                // APLICAÇÃO DE DESTAQUE VISUAL DE CÉLULAS APENAS NO RESULTADO FINAL E EM COLUNAS DE MESES (colIdx > 0)
+                if (isResultView && colIdx > 0) {
+                    const status = FinalProcessor.cellStatusMap[`${actualRowIdx}_${colIdx}`];
+                    if (status === 'MATCH') {
+                        td.classList.add('cell-match');
+                        td.title = "🟢 MATCH: Valor igual ao informado no Drive";
+                    } else if (status === 'MISSING') {
+                        td.classList.add('cell-missing');
+                        td.title = "🟠 MISSING: Presente no Drive, mas ausente no Relatório";
+                    } else if (status === 'DIVERGENT') {
+                        td.classList.add('cell-divergent');
+                        td.title = "🔴 DIVERGENT: Valor divergente entre Relatório e Drive";
+                    }
+                }
 
                 tr.appendChild(td);
             }
