@@ -1,15 +1,17 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Estilo Excel / Google Sheets)
+ * Importador de Planilhas - app.js (Estilo Excel / Google Sheets + Pipeline SIGA)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura e 
- * visualização de planilhas nos formatos .xlsx, .xls, .csv, .tsv e .ods.
+ * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, seleção de
+ * tipo de planilha (Modal) e pipeline modular de tratamento de dados.
  * 
- * Arquitetura organizada em 4 módulos principais:
+ * Arquitetura em Módulos:
  * 1. Utilidades de Planilha (Excel Utilities)
- * 2. Interface & Eventos (UI Controller)
- * 3. Leitura de Arquivo (Spreadsheet Reader)
- * 4. Renderização Interativa da Tabela (Table Renderer)
+ * 2. Motor de Regras & Pipelines (Treatment Pipeline Engine)
+ * 3. Gerenciamento do Modal (Modal Controller)
+ * 4. Interface & Eventos (UI Controller)
+ * 5. Leitura de Arquivo (Spreadsheet Reader)
+ * 6. Renderização Interativa da Tabela (Table Renderer)
  * ============================================================================
  */
 
@@ -27,11 +29,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableHead = document.getElementById('tableHead');
     const tableBody = document.getElementById('tableBody');
 
-    // Estado da Aplicação (Reservado para extensões futuras: filtros, ordenação, etc.)
+    // Elementos do Modal
+    const typeSelectionModal = document.getElementById('typeSelectionModal');
+    const modalCloseBtn = document.getElementById('modalCloseBtn');
+    const btnOptionRelatorio = document.getElementById('btnOptionRelatorio');
+    const btnOptionSiga = document.getElementById('btnOptionSiga');
+    const modalAlert = document.getElementById('modalAlert');
+    const modalAlertText = document.getElementById('modalAlertText');
+
+    // Estado da Aplicação
     const appState = {
         currentFile: null,
         rawMatrixData: [],
-        selectedCell: null
+        treatedMatrixData: [],
+        selectedCell: null,
+        selectedType: null
     };
 
     // ------------------------------------------------------------------------
@@ -53,30 +65,189 @@ document.addEventListener('DOMContentLoaded', () => {
         return colName;
     }
 
+    /**
+     * Verifica se um valor de célula é considerado totalmente vazio.
+     * Células nulas, indefinidas, string vazia ("") ou contendo apenas espaços são vazias.
+     * @param {any} value 
+     * @returns {boolean}
+     */
+    function isCellEmpty(value) {
+        if (value === null || value === undefined) return true;
+        if (typeof value === 'string' && value.trim() === '') return true;
+        return false;
+    }
+
     // ------------------------------------------------------------------------
-    // 2. MÓDULO DE INTERFACE & EVENTOS (UI Controller)
+    // 2. MOTOR DE REGRAS & PIPELINES (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     /**
-     * Inicializa os ouvintes de eventos da interface.
+     * Regra 1: Remove completamente as `count` primeiras linhas da planilha.
+     * A nova primeira linha passa a ser a nova 1ª linha (cabeçalho).
+     * 
+     * @param {Array<Array<any>>} matrix - Matriz bidimensional de dados.
+     * @param {number} count - Quantidade de linhas a remover do topo.
+     * @returns {Array<Array<any>>} Matriz com as linhas removidas.
      */
-    function initEvents() {
-        // Evento de seleção de arquivo via input file
-        fileInput.addEventListener('change', handleFileSelect);
-
-        // Evento de remoção de planilha
-        btnRemoveFile.addEventListener('click', resetView);
-
-        // Eventos de Drag & Drop na zona de upload
-        dropZone.addEventListener('dragover', handleDragOver);
-        dropZone.addEventListener('dragleave', handleDragLeave);
-        dropZone.addEventListener('drop', handleDrop);
+    function removeTopRowsRule(matrix, count = 3) {
+        if (!matrix || matrix.length <= count) {
+            return [];
+        }
+        return matrix.slice(count);
     }
 
     /**
-     * Trata a seleção de arquivo via input.
-     * @param {Event} event 
+     * Regra 2: Remove todas as colunas que estejam COMPLETAMENTE vazias.
+     * Uma coluna é totalmente vazia quando TODAS as suas células forem vazias.
+     * 
+     * @param {Array<Array<any>>} matrix - Matriz bidimensional de dados.
+     * @returns {Array<Array<any>>} Matriz sem as colunas vazias.
      */
+    function removeEmptyColumnsRule(matrix) {
+        if (!matrix || matrix.length === 0) return [];
+
+        // Descobre a quantidade máxima de colunas existentes
+        let maxCols = 0;
+        matrix.forEach(row => {
+            if (row.length > maxCols) maxCols = row.length;
+        });
+
+        // Identifica quais colunas possuem pelo menos 1 valor não-vazio
+        const nonArrayColIndices = [];
+        for (let colIdx = 0; colIdx < maxCols; colIdx++) {
+            let hasContent = false;
+            for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
+                const cellVal = matrix[rowIdx][colIdx];
+                if (!isCellEmpty(cellVal)) {
+                    hasContent = true;
+                    break;
+                }
+            }
+            if (hasContent) {
+                nonArrayColIndices.push(colIdx);
+            }
+        }
+
+        // Filtra a matriz mantendo apenas os índices de colunas com conteúdo
+        const cleanMatrix = matrix.map(row => {
+            return nonArrayColIndices.map(colIdx => row[colIdx]);
+        });
+
+        return cleanMatrix;
+    }
+
+    /**
+     * Registro de Pipelines de Tratamento por Tipo de Planilha.
+     * Arquitetura preparada para adicionar novos tipos e regras facilmente.
+     */
+    const SPREADSHEET_PIPELINES = {
+        // Fluxo Planilha do SIGA: Executa Regra 1 e Regra 2
+        siga: [
+            (matrix) => removeTopRowsRule(matrix, 3),
+            (matrix) => removeEmptyColumnsRule(matrix)
+        ],
+        // Fluxo Planilha de Relatório (Reservado para versões futuras)
+        relatorio: []
+    };
+
+    /**
+     * Executa o pipeline de tratamento correspondente ao tipo de planilha selecionado.
+     * @param {string} sheetType - 'siga' ou 'relatorio'
+     * @param {Array<Array<any>>} rawMatrix - Matriz de dados brutos
+     * @returns {Array<Array<any>>} Matriz tratada
+     */
+    function runTreatmentPipeline(sheetType, rawMatrix) {
+        const pipeline = SPREADSHEET_PIPELINES[sheetType];
+        if (!pipeline || pipeline.length === 0) {
+            return rawMatrix;
+        }
+
+        // Executa as regras em sequência de forma pura (sem mutação colateral)
+        return pipeline.reduce((currentMatrix, ruleFn) => ruleFn(currentMatrix), rawMatrix);
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Abre o modal para o usuário escolher o tipo da planilha.
+     */
+    function openTypeModal() {
+        hideModalAlert();
+        typeSelectionModal.classList.remove('hidden');
+    }
+
+    /**
+     * Fecha o modal de seleção.
+     */
+    function closeTypeModal() {
+        typeSelectionModal.classList.add('hidden');
+        hideModalAlert();
+    }
+
+    /**
+     * Exibe o aviso para fluxos ainda não implementados.
+     * @param {string} message 
+     */
+    function showModalAlert(message) {
+        modalAlertText.textContent = message;
+        modalAlert.classList.remove('hidden');
+    }
+
+    /**
+     * Oculta o aviso do modal.
+     */
+    function hideModalAlert() {
+        modalAlert.classList.add('hidden');
+    }
+
+    /**
+     * Trata a seleção da opção "Planilha de Relatório".
+     */
+    function handleSelectRelatorio() {
+        showModalAlert("Este fluxo será implementado em uma versão futura.");
+    }
+
+    /**
+     * Trata a seleção da opção "Planilha do SIGA".
+     */
+    function handleSelectSiga() {
+        appState.selectedType = 'siga';
+        closeTypeModal();
+
+        // Inicia o pipeline de tratamento do SIGA
+        const treated = runTreatmentPipeline('siga', appState.rawMatrixData);
+        appState.treatedMatrixData = treated;
+
+        // Renderiza a matriz resultante na tabela
+        renderSpreadsheetTable(treated);
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. MÓDULO DE INTERFACE & EVENTOS (UI Controller)
+    // ------------------------------------------------------------------------
+
+    function initEvents() {
+        fileInput.addEventListener('change', handleFileSelect);
+        btnRemoveFile.addEventListener('click', resetView);
+
+        dropZone.addEventListener('dragover', handleDragOver);
+        dropZone.addEventListener('dragleave', handleDragLeave);
+        dropZone.addEventListener('drop', handleDrop);
+
+        // Eventos do Modal
+        modalCloseBtn.addEventListener('click', () => {
+            closeTypeModal();
+            if (appState.treatedMatrixData.length === 0) {
+                resetView();
+            }
+        });
+
+        btnOptionRelatorio.addEventListener('click', handleSelectRelatorio);
+        btnOptionSiga.addEventListener('click', handleSelectSiga);
+    }
+
     function handleFileSelect(event) {
         const file = event.target.files[0];
         if (file) {
@@ -84,30 +255,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Trata o efeito dragover.
-     * @param {DragEvent} event 
-     */
     function handleDragOver(event) {
         event.preventDefault();
         event.stopPropagation();
         dropZone.classList.add('drag-active');
     }
 
-    /**
-     * Trata o efeito dragleave.
-     * @param {DragEvent} event 
-     */
     function handleDragLeave(event) {
         event.preventDefault();
         event.stopPropagation();
         dropZone.classList.remove('drag-active');
     }
 
-    /**
-     * Trata a soltura (drop) do arquivo na zona indicada.
-     * @param {DragEvent} event 
-     */
     function handleDrop(event) {
         event.preventDefault();
         event.stopPropagation();
@@ -121,17 +280,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Valida os formatos suportados (.xlsx, .xls, .csv, .tsv, .ods) e envia para leitura.
-     * @param {File} file 
-     */
     function processFile(file) {
         const validExtensions = ['.xlsx', '.xls', '.csv', '.tsv', '.ods'];
         const fileName = file.name.toLowerCase();
         const isValid = validExtensions.some(ext => fileName.endsWith(ext));
 
         if (!isValid) {
-            alert('Formato não suportado. Por favor, selecione um arquivo .xlsx, .xls, .csv, .tsv ou .ods.');
+            alert('Formato não suportado. Selecione um arquivo .xlsx, .xls, .csv, .tsv ou .ods.');
             resetView();
             return;
         }
@@ -141,18 +296,11 @@ document.addEventListener('DOMContentLoaded', () => {
         readSpreadsheetFile(file);
     }
 
-    /**
-     * Exibe a badge com o nome do arquivo selecionado.
-     * @param {string} name 
-     */
     function showFileName(name) {
         fileNameText.textContent = name;
         fileInfoCard.classList.remove('hidden');
     }
 
-    /**
-     * Reseta a interface para o estado padrão ("Nenhuma planilha carregada").
-     */
     function resetView() {
         fileInput.value = '';
         fileNameText.textContent = 'Nenhum arquivo';
@@ -160,46 +308,42 @@ document.addEventListener('DOMContentLoaded', () => {
         
         appState.currentFile = null;
         appState.rawMatrixData = [];
+        appState.treatedMatrixData = [];
         appState.selectedCell = null;
+        appState.selectedType = null;
 
         tableHead.innerHTML = '';
         tableBody.innerHTML = '';
 
         tableWrapper.classList.add('hidden');
         emptyState.classList.remove('hidden');
+        closeTypeModal();
     }
 
     // ------------------------------------------------------------------------
-    // 3. MÓDULO DE LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 5. MÓDULO DE LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
-    /**
-     * Lê planilhas nos formatos Excel, CSV, TSV e ODS utilizando SheetJS no navegador.
-     * @param {File} file 
-     */
     function readSpreadsheetFile(file) {
         const reader = new FileReader();
 
         reader.onload = function (e) {
             try {
                 const data = new Uint8Array(e.target.result);
-                
-                // SheetJS lê nativamente XLSX, XLS, CSV, TSV e ODS a partir do Uint8Array
                 const workbook = XLSX.read(data, { type: 'array' });
 
-                // Obtém a primeira planilha existente no arquivo
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
 
-                // Converte em matriz 2D mantendo valores originais sem alterações
                 const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { 
                     header: 1,
-                    defval: '' // Mantém células vazias com string vazia
+                    defval: '' 
                 });
 
                 if (rawMatrix && rawMatrix.length > 0) {
                     appState.rawMatrixData = rawMatrix;
-                    renderSpreadsheetTable(rawMatrix);
+                    // Abre o modal para escolha do tipo ANTES de qualquer processamento ou exibição
+                    openTypeModal();
                 } else {
                     alert('A planilha selecionada não possui dados.');
                     resetView();
@@ -215,41 +359,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. MÓDULO DE RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 6. MÓDULO DE RENDERIZAÇÃO DA TABELA (Table Renderer)
     // ------------------------------------------------------------------------
 
     /**
-     * Renderiza a matriz de dados em formato de planilha moderna (Excel / Google Sheets).
-     * Exibe letras nas colunas (A, B, C...), números nas linhas (1, 2, 3...) e
-     * nomeação inteligente com o conteúdo da primeira linha.
-     * 
-     * @param {Array<Array<any>>} matrix - Matriz bidimensional de dados.
+     * Renderiza a matriz tratada em formato de planilha moderna (Excel / Google Sheets).
+     * @param {Array<Array<any>>} matrix - Matriz bidimensional tratada
      */
     function renderSpreadsheetTable(matrix) {
         tableHead.innerHTML = '';
         tableBody.innerHTML = '';
 
-        if (matrix.length === 0) return;
+        if (!matrix || matrix.length === 0) {
+            alert('Após o tratamento, a planilha não possui dados a exibir.');
+            resetView();
+            return;
+        }
 
-        // Identifica o total de colunas necessárias com base na maior linha existente
+        // Descobre a quantidade de colunas da matriz tratada
         let maxCols = 0;
         matrix.forEach(row => {
             if (row.length > maxCols) maxCols = row.length;
         });
 
-        // --- A. Renderiza a Linha de Cabeçalho Superior (Letras + Título Inteligente) ---
+        // --- A. Renderiza a Linha de Cabeçalho (Letras + Nome Inteligente) ---
         const trHead = document.createElement('tr');
         
-        // 1. Célula Origem Superior Esquerda (Canto fixo)
         const thCorner = document.createElement('th');
         thCorner.className = 'corner-header';
         thCorner.textContent = '#';
         trHead.appendChild(thCorner);
 
-        // A primeira linha dos dados é usada como fonte de títulos inteligentes das colunas
+        // A primeira linha da matriz tratada torna-se o cabeçalho
         const firstRowData = matrix[0] || [];
 
-        // 2. Colunas com Letras (A, B, C...) + Nomes Inteligentes
         for (let colIdx = 0; colIdx < maxCols; colIdx++) {
             const th = document.createElement('th');
             th.className = 'col-header';
@@ -260,7 +403,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? String(firstRowData[colIdx]).trim() 
                 : '';
 
-            // Estrutura do Título: Letra + Nome Inteligente (se houver)
             const innerDiv = document.createElement('div');
             innerDiv.className = 'col-header-inner';
 
@@ -281,22 +423,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tableHead.appendChild(trHead);
 
-        // --- B. Renderiza o Corpo da Tabela com Numeração de Linhas (1, 2, 3...) ---
-        // A partir da segunda linha de dados (índice 1 em diante)
+        // --- B. Renderiza o Corpo da Tabela (Linhas Restantes) ---
         const bodyRows = matrix.slice(1);
         const fragment = document.createDocumentFragment();
 
         bodyRows.forEach((rowData, rowIdx) => {
             const tr = document.createElement('tr');
-            tr.dataset.rowIndex = rowIdx + 1; // 1-indexed para numeração amigável
+            tr.dataset.rowIndex = rowIdx + 1;
 
-            // 1. Coluna Fixa do Número da Linha (1, 2, 3...)
+            // Coluna Fixa do Número da Linha
             const thRowIndex = document.createElement('th');
             thRowIndex.className = 'row-index';
             thRowIndex.textContent = rowIdx + 1;
             tr.appendChild(thRowIndex);
 
-            // 2. Células de Dados da Linha
+            // Células de Dados
             for (let colIdx = 0; colIdx < maxCols; colIdx++) {
                 const td = document.createElement('td');
                 td.dataset.colIndex = colIdx;
@@ -313,19 +454,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         tableBody.appendChild(fragment);
 
-        // --- C. Adiciona Interatividade de Planilha (Hover de Linha/Coluna e Seleção) ---
         setupTableInteractivity();
 
-        // --- D. Atualiza Visibilidade ---
         emptyState.classList.add('hidden');
         tableWrapper.classList.remove('hidden');
     }
 
-    /**
-     * Configura ouvintes de interatividade para destaque visual de linhas, colunas e seleção de células.
-     */
     function setupTableInteractivity() {
-        // Remover listeners antigos usando delegação de eventos no tableBody
         tableBody.removeEventListener('mouseover', handleTableMouseOver);
         tableBody.removeEventListener('mouseout', handleTableMouseOut);
         tableBody.removeEventListener('click', handleTableClick);
@@ -335,10 +470,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.addEventListener('click', handleTableClick);
     }
 
-    /**
-     * Destaca a linha inteira e a coluna inteira ao passar o mouse sobre qualquer célula.
-     * @param {MouseEvent} event 
-     */
     function handleTableMouseOver(event) {
         const td = event.target.closest('td');
         if (!td) return;
@@ -346,22 +477,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const colIdx = td.dataset.colIndex;
         const tr = td.closest('tr');
 
-        // Destaca a linha inteira
         if (tr) {
             tr.classList.add('row-hover');
         }
 
-        // Destaca a coluna inteira (células de dados + cabeçalho da coluna)
         if (colIdx !== undefined) {
             const allColCells = tableWrapper.querySelectorAll(`[data-col-index="${colIdx}"]`);
             allColCells.forEach(cell => cell.classList.add('col-hover'));
         }
     }
 
-    /**
-     * Remove os destaques visuais quando o mouse sai da célula.
-     * @param {MouseEvent} event 
-     */
     function handleTableMouseOut(event) {
         const td = event.target.closest('td');
         if (!td) return;
@@ -378,24 +503,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Gerencia a seleção visual de célula ao clicar (Estilo borda ativa do Excel).
-     * @param {MouseEvent} event 
-     */
     function handleTableClick(event) {
         const td = event.target.closest('td');
         if (!td) return;
 
-        // Remove seleção anterior se houver
         if (appState.selectedCell) {
             appState.selectedCell.classList.remove('cell-selected');
         }
 
-        // Define a nova célula selecionada
         td.classList.add('cell-selected');
         appState.selectedCell = td;
     }
 
-    // Inicializa os eventos da aplicação
     initEvents();
 });
