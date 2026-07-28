@@ -40,6 +40,15 @@
     --summary-bg: #f0fdf4;
     --summary-border: #a7f3d0;
     
+    /* Cores do Modo Debug */
+    --debug-bg: #0f172a;
+    --debug-card-bg: #1e293b;
+    --debug-border: #334155;
+    --debug-text: #f8fafc;
+    --debug-muted: #94a3b8;
+    --debug-accent: #38bdf8;
+    --debug-warning: #fbbf24;
+
     --border-color: #e2e8f0;
     --border-dark: #cbd5e1;
     
@@ -87,11 +96,20 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   2. Cabeçalho da Aplicação
+   2. Cabeçalho da Aplicação & Botão Debug
    -------------------------------------------------------------------------- */
 .app-header {
     text-align: center;
     padding: 0.5rem 0;
+    position: relative;
+}
+
+.header-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-bottom: 0.25rem;
 }
 
 .app-title {
@@ -99,7 +117,37 @@ body {
     font-weight: 700;
     color: var(--text-primary);
     letter-spacing: -0.025em;
-    margin-bottom: 0.25rem;
+}
+
+/* Botão de Alternância do Modo Debug */
+.btn-debug-toggle {
+    position: absolute;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-dark);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+.btn-debug-toggle:hover {
+    background-color: var(--accent-light);
+    border-color: var(--accent-border);
+    color: var(--accent-color);
+}
+
+.btn-debug-toggle.active {
+    background-color: var(--debug-bg);
+    border-color: var(--debug-accent);
+    color: var(--debug-accent);
 }
 
 .app-subtitle {
@@ -257,7 +305,133 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   4. Painel de Resumo Financeiro (Cards Elegantes)
+   4. Painel de Diagnóstico do Modo Debug
+   -------------------------------------------------------------------------- */
+.debug-panel {
+    background-color: var(--debug-bg);
+    color: var(--debug-text);
+    border: 1px solid var(--debug-border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-xl);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.debug-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--debug-border);
+    padding-bottom: 0.75rem;
+}
+
+.debug-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    color: var(--debug-accent);
+}
+
+.debug-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.debug-status-badge {
+    background-color: rgba(56, 189, 248, 0.15);
+    color: var(--debug-accent);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+}
+
+.debug-warnings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.debug-warning-card {
+    background-color: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    color: var(--debug-warning);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+}
+
+.debug-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.25rem;
+}
+
+.debug-card {
+    background-color: var(--debug-card-bg);
+    border: 1px solid var(--debug-border);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+.debug-card-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--debug-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--debug-border);
+    padding-bottom: 0.375rem;
+}
+
+.debug-metric-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.825rem;
+    color: var(--debug-text);
+}
+
+.debug-metric-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.debug-metric-label {
+    color: var(--debug-muted);
+}
+
+.debug-metric-value {
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.debug-log-box {
+    max-height: 140px;
+    overflow-y: auto;
+    font-size: 0.775rem;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+    line-height: 1.4;
+    color: #cbd5e1;
+}
+
+/* --------------------------------------------------------------------------
+   5. Painel de Resumo Financeiro (Cards Elegantes)
    -------------------------------------------------------------------------- */
 .summary-container {
     padding: 1.25rem 1.5rem;
@@ -338,7 +512,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   5. Visualizador de Planilha Moderno (Estilo Excel / Google Sheets)
+   6. Visualizador de Planilha Moderno (Estilo Excel / Google Sheets)
    -------------------------------------------------------------------------- */
 .viewer-section {
     background-color: var(--bg-card);
@@ -351,7 +525,6 @@ body {
     overflow: hidden;
 }
 
-/* Estado Vazio */
 .empty-state {
     display: flex;
     flex-direction: column;
@@ -376,7 +549,6 @@ body {
     color: var(--text-secondary);
 }
 
-/* Contêiner da Tabela com Rolagem Dupla (X e Y) */
 .table-wrapper {
     width: 100%;
     max-height: calc(82vh - 180px);
@@ -385,7 +557,6 @@ body {
     background-color: #ffffff;
 }
 
-/* Tabela Excel Estilizada */
 .excel-table {
     width: 100%;
     border-collapse: separate;
@@ -512,7 +683,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   6. Modal de Seleção do Tipo de Planilha
+   7. Modal de Seleção do Tipo de Planilha
    -------------------------------------------------------------------------- */
 .modal-backdrop {
     position: fixed;
@@ -694,7 +865,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   7. Responsividade
+   8. Responsividade
    -------------------------------------------------------------------------- */
 @media (max-width: 768px) {
     body {
@@ -709,6 +880,15 @@ body {
         font-size: 1.6rem;
     }
 
+    .btn-debug-toggle {
+        position: static;
+        margin-top: 0.5rem;
+    }
+
+    .header-top-bar {
+        flex-direction: column;
+    }
+
     .drop-zone {
         padding: 1.5rem 1rem;
     }
@@ -717,7 +897,7 @@ body {
         padding: 1.5rem;
     }
 
-    .summary-grid {
+    .summary-grid, .debug-grid {
         grid-template-columns: 1fr;
     }
 
