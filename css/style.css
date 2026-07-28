@@ -1136,3 +1136,202 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* --------------------------------------------------------------------------
+   10. ESTILOS DO PAINEL DE ANÁLISE DOS DADOS (TELA RESULTADO)
+   -------------------------------------------------------------------------- */
+.result-mode-selector-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow-sm);
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.result-mode-label {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.result-mode-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.btn-result-mode {
+    background-color: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    font-size: 0.825rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-result-mode:hover {
+    background-color: var(--accent-light);
+    color: var(--accent-color);
+    border-color: var(--accent-border);
+}
+
+.btn-result-mode.active {
+    background-color: var(--accent-color);
+    color: #ffffff;
+    border-color: var(--accent-color);
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.result-dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-bottom: 1.5rem;
+}
+
+.dashboard-topic-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    transition: all var(--transition-fast);
+}
+
+.dashboard-topic-card.highlight-card {
+    border-color: var(--accent-color);
+    background-color: #f8fafc;
+}
+
+.dashboard-topic-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    background-color: #ffffff;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.dashboard-topic-header:hover {
+    background-color: #f8fafc;
+}
+
+.topic-header-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.topic-badge-count {
+    background-color: var(--accent-light);
+    color: var(--accent-color);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 12px;
+}
+
+.dashboard-topic-body {
+    padding: 1.25rem;
+    overflow-x: auto;
+}
+
+.dashboard-item-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.dashboard-item-search-input {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-dark);
+    border-radius: var(--radius-md);
+    outline: none;
+}
+
+.dashboard-item-search-input:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.item-card-row {
+    background-color: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.item-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.item-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.item-card-months-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.5rem;
+}
+
+.month-value-pill {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.month-value-pill .month-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.month-value-pill .month-val {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.origin-badge-pill {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.origin-apurasus { background-color: #dbeafe; color: #1e40af; }
+.origin-siga { background-color: #dcfce7; color: #166534; }
+.origin-drive { background-color: #fef3c7; color: #92400e; }
+.origin-sigss { background-color: #f3e8ff; color: #6b21a8; }
+

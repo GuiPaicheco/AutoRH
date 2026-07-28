@@ -3,99 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Importador de Planilhas</title>
+    <title>Importador Automático de Planilhas - Dashboard Analítico</title>
     
     <!-- Fonte Google Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
-    <!-- Estilos Principais -->
+    <!-- CSS da Aplicação -->
     <link rel="stylesheet" href="css/style.css">
-    
-    <!-- Biblioteca SheetJS (XLSX) via CDN para leitura de planilhas no navegador -->
+
+    <!-- Biblioteca SheetJS (XLSX) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
     <div class="app-container">
-        <!-- CABEÇALHO MINIMALISTA (Foco na Unidade de Saúde) -->
-        <header class="app-header-minimal">
-            <div class="header-main-info">
-                <span class="header-unit-label">SESSÃO ATIVA • UNIDADE DE SAÚDE</span>
-                <h1 class="header-unit-title" id="headerUnitTitle">Selecione a Planilha de Relatório</h1>
+        <!-- Cabeçalho Minimalista da Aplicação -->
+        <header class="app-header">
+            <div class="header-brand">
+                <div class="brand-logo">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </div>
+                <div class="brand-titles">
+                    <h1 class="app-title">Painel de Análise Automática de Custos</h1>
+                    <span class="app-subtitle">Sistema Unificado de Leitura e Cruzamento de Planilhas</span>
+                </div>
             </div>
-            
-            <div class="header-meta-row hidden" id="headerMetaRow">
-                <span class="meta-item" id="metaReportItem">📄 Relatório: <strong>Não carregado</strong></span>
-                <span class="meta-divider">•</span>
-                <span class="meta-item" id="metaSigaItem">📊 SIGA: <strong>0 arquivos</strong></span>
-                <span class="meta-divider">•</span>
-                <span class="meta-item" id="metaDriveItem">📁 Drive: <strong>Não carregado</strong></span>
-                <span class="meta-divider">•</span>
-                <span class="meta-badge" id="metaStatusBadge">Aguardando Relatório</span>
+
+            <!-- Informações da Unidade de Saúde e Status da Sessão -->
+            <div class="header-unit-card">
+                <span class="unit-label">UNIDADE DE SAÚDE</span>
+                <span class="unit-title" id="headerUnitTitle">Selecione a Planilha de Relatório</span>
+                <div class="meta-row hidden" id="headerMetaRow">
+                    <span class="meta-item" id="metaReportItem">📄 Relatório: <strong>Não carregado</strong></span>
+                    <span class="meta-item" id="metaSigaItem">📊 SIGA: <strong>0 arquivos</strong></span>
+                    <span class="meta-item" id="metaDriveItem">📁 Drive: <strong>Não carregado</strong></span>
+                    <span class="status-badge" id="metaStatusBadge">Passo 1/5</span>
+                </div>
             </div>
         </header>
 
-        <!-- ASSISTENTE DE ETAPAS (WIZARD STEPPER - 5 ETAPAS) -->
-        <section class="wizard-section">
-            <div class="wizard-stepper">
-                <!-- ETAPA 1: Relatório -->
-                <div class="wizard-step-item active" id="stepItemReport">
-                    <div class="step-circle">1</div>
-                    <div class="step-label-wrapper">
-                        <span class="step-title">① Relatório</span>
-                        <span class="step-status-badge badge-active" id="stepStatusReport">Passo Atual</span>
-                    </div>
-                </div>
-                <div class="step-connector" id="connector1"></div>
-
-                <!-- ETAPA 2: SIGA (Coleção Multiarquivos) -->
-                <div class="wizard-step-item disabled" id="stepItemSiga">
-                    <div class="step-circle">2</div>
-                    <div class="step-label-wrapper">
-                        <span class="step-title" id="stepTitleSiga">② SIGA (0 arquivos)</span>
-                        <span class="step-status-badge badge-pending" id="stepStatusSiga">Aguardando Relatório</span>
-                    </div>
-                </div>
-                <div class="step-connector" id="connector2"></div>
-
-                <!-- ETAPA 3: Drive -->
-                <div class="wizard-step-item disabled" id="stepItemDrive">
-                    <div class="step-circle">3</div>
-                    <div class="step-label-wrapper">
-                        <span class="step-title">③ Drive</span>
-                        <span class="step-status-badge badge-pending" id="stepStatusDrive">Aguardando SIGA</span>
-                    </div>
-                </div>
-                <div class="step-connector" id="connector3"></div>
-
-                <!-- ETAPA 4: Processamento -->
-                <div class="wizard-step-item disabled" id="stepItemProcess">
-                    <div class="step-circle">4</div>
-                    <div class="step-label-wrapper">
-                        <span class="step-title">④ Processamento</span>
-                        <span class="step-status-badge badge-pending" id="stepStatusProcess">Aguardando Drive</span>
-                    </div>
-                </div>
-                <div class="step-connector" id="connector4"></div>
-
-                <!-- ETAPA 5: Resultado -->
-                <div class="wizard-step-item disabled" id="stepItemResult">
-                    <div class="step-circle">5</div>
-                    <div class="step-label-wrapper">
-                        <span class="step-title">⑤ Resultado</span>
-                        <span class="step-status-badge badge-pending" id="stepStatusResult">Aguardando Processamento</span>
-                    </div>
+        <!-- WIZARD STEPPER (5 Etapas) -->
+        <nav class="wizard-stepper" id="wizardStepper">
+            <div class="wizard-step-item active" id="stepItemReport">
+                <div class="step-badge">1</div>
+                <div class="step-info">
+                    <span class="step-title">① Relatório</span>
+                    <span class="step-status-badge badge-active" id="stepStatusReport">Passo Atual</span>
                 </div>
             </div>
-        </section>
+            
+            <div class="wizard-connector" id="connector1"></div>
 
-        <!-- Seção de Importação de Arquivo -->
+            <div class="wizard-step-item disabled" id="stepItemSiga">
+                <div class="step-badge">2</div>
+                <div class="step-info">
+                    <span class="step-title" id="stepTitleSiga">② SIGA (0)</span>
+                    <span class="step-status-badge badge-disabled" id="stepStatusSiga">Aguardando Relatório</span>
+                </div>
+            </div>
+
+            <div class="wizard-connector" id="connector2"></div>
+
+            <div class="wizard-step-item disabled" id="stepItemDrive">
+                <div class="step-badge">3</div>
+                <div class="step-info">
+                    <span class="step-title">③ Drive</span>
+                    <span class="step-status-badge badge-disabled" id="stepStatusDrive">Aguardando SIGA</span>
+                </div>
+            </div>
+
+            <div class="wizard-connector" id="connector3"></div>
+
+            <div class="wizard-step-item disabled" id="stepItemProcess">
+                <div class="step-badge">4</div>
+                <div class="step-info">
+                    <span class="step-title">④ Processamento</span>
+                    <span class="step-status-badge badge-disabled" id="stepStatusProcess">Aguardando Drive</span>
+                </div>
+            </div>
+
+            <div class="wizard-connector" id="connector4"></div>
+
+            <div class="wizard-step-item disabled" id="stepItemResult">
+                <div class="step-badge">5</div>
+                <div class="step-info">
+                    <span class="step-title">⑤ Resultado</span>
+                    <span class="step-status-badge badge-disabled" id="stepStatusResult">Aguardando Processamento</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Área de Upload de Arquivos / Importação -->
         <section class="upload-section">
             <div class="drop-zone" id="dropZone">
                 <div class="drop-zone-content">
                     <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     <p class="drop-zone-text" id="dropZonePrompt">Arraste e solte a Planilha de Relatório aqui ou</p>
                     
@@ -144,7 +150,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span>📊 Visualização da Planilha</span>
+                <span>📊 Painel Analítico / Planilha</span>
             </button>
             <button type="button" class="view-tab-btn" id="btnTabInspector">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -163,8 +169,22 @@
                 <p class="empty-state-text">Importe a Planilha de Relatório na Etapa 1 para iniciar a sessão.</p>
             </div>
 
-            <!-- CONTEÚDO DA ABA 1: VISUALIZAÇÃO PADRÃO DA PLANILHA -->
+            <!-- CONTEÚDO DA ABA 1: VISUALIZAÇÃO DO PAINEL ANALÍTICO E DA PLANILHA -->
             <div class="tab-content-container hidden" id="viewerTabContent">
+                
+                <!-- Barra de Modos de Visualização do Resultado -->
+                <div class="result-mode-selector-bar hidden" id="resultModeSelectorBar">
+                    <span class="result-mode-label">Modo de Análise do Resultado:</span>
+                    <div class="result-mode-btn-group">
+                        <button type="button" class="btn-result-mode active" data-mode="planilha">📊 Planilha</button>
+                        <button type="button" class="btn-result-mode" data-mode="topico">📂 Por Tópico</button>
+                        <button type="button" class="btn-result-mode" data-mode="item">📋 Por Item</button>
+                        <button type="button" class="btn-result-mode" data-mode="mes">📅 Por Mês</button>
+                        <button type="button" class="btn-result-mode" data-mode="origem">🏢 Por Tipo de Lançamento</button>
+                    </div>
+                </div>
+
+                <!-- Resumo Financeiro do SIGA (Exibido quando visualizando o SIGA) -->
                 <div class="summary-container hidden" id="summaryContainer">
                     <div class="summary-header">
                         <svg class="summary-header-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -175,6 +195,10 @@
                     <div class="summary-grid" id="summaryGrid"></div>
                 </div>
 
+                <!-- CONTAINER DO PAINEL ANALÍTICO (CARDS, TÓPICOS, ITENS, MESES, ORIGENS) -->
+                <div class="result-dashboard-container hidden" id="resultDashboardContainer"></div>
+
+                <!-- GRADE DE TABELA DA PLANILHA -->
                 <div class="table-wrapper hidden" id="tableWrapper">
                     <table class="excel-table" id="excelTable">
                         <thead id="tableHead"></thead>

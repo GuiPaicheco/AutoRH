@@ -1,16 +1,17 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Parser de CSV Brasileiro & Preservação Fiel de Texto Bruto)
+ * Importador de Planilhas - app.js (Painel de Análise dos Dados - Tela Resultado)
  * ----------------------------------------------------------------------------
- * Diagnóstico: O problema das casas decimais ocorria no parser durante a importação.
- * Solução:
- * - FASE 1 (Leitura Bruta): Importa arquivos CSV usando delimitador ';' e ',' como
- *   separador decimal no padrão brasileiro, com dynamicTyping = false. Reconstrução
- *   100% fiel da tabela onde todas as células são mantidas como strings (ex: "64,35", "1251,80").
- * - FASE 2 (Tratamento Estrutural): Tratamentos de pipeline atuam unicamente na estrutura
- *   (remoção de linhas/colunas, renomeação de cabeçalhos, filtro por datas) sem alterar texto.
- * - SEÇÃO INSPECTOR "Leitura Bruta do CSV": Exibe a quadria de integridade e validação
- *   amostral obrigatória (64,35 / 1251,80 / 150769,96).
+ * Filosofia: A tela Resultado evolui para um Painel Analítico de Gestão com 5
+ * modos de visualização:
+ * 1. Planilha (Visualização clássica em grade mantida para auditoria)
+ * 2. Por Tópico (Cartões expansíveis por grandes grupos: Pessoal, Consumo, Terceiros, Despesas Gerais, Total)
+ * 3. Por Item (Lista detalhada por item com busca rápida e valores mensais)
+ * 4. Por Mês (Visão cronológica por competência)
+ * 5. Por Tipo de Lançamento (Origens ApuraSUS, RH, Drive, SIGSS)
+ * 
+ * Camada de Apresentação Desacoplada (ResultViewEngine): Consome os dados crus do
+ * Processador Final sem reexecutar pipelines.
  * ============================================================================
  */
 
@@ -79,10 +80,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const inspectorSheetTitle = document.getElementById('inspectorSheetTitle');
     const inspectorSheetSubtitle = document.getElementById('inspectorSheetSubtitle');
 
-    // Elementos do Resumo Financeiro
+    // Elementos do Resumo Financeiro e Painel Analítico
     const summaryContainer = document.getElementById('summaryContainer');
     const summaryTitle = document.getElementById('summaryTitle');
     const summaryGrid = document.getElementById('summaryGrid');
+    const resultModeSelectorBar = document.getElementById('resultModeSelectorBar');
+    const resultDashboardContainer = document.getElementById('resultDashboardContainer');
 
     // Estado Geral da Aplicação
     const appState = {
@@ -94,15 +97,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. PARSER DE CSV BRASILEIRO (FASE 1: LEITURA BRUTA E RECONSTRUÇÃO FIEL)
     // ------------------------------------------------------------------------
 
-    /**
-     * Reconstrói a tabela a partir do texto original de um arquivo CSV/TSV.
-     * Suporta delimitador ';' e ',', quebra de linha automática e dynamicTyping = false.
-     * Preserva 100% o conteúdo das células como texto bruto (string).
-     */
     function parseBrazilianCSV(text) {
         if (!text || typeof text !== 'string') return [];
 
-        const cleanText = text.replace(/^\uFEFF/, ''); // Remove UTF-8 BOM
+        const cleanText = text.replace(/^\uFEFF/, '');
         const lines = cleanText.split(/\r\n|\n|\r/);
 
         let semicolonCount = 0;
@@ -166,9 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
 
     const CSVInspectorEngine = {
-        /**
-         * Monta a quadria de integridade e valida amostras conhecidas (ex: 64,35, 1251,80, 150769,96).
-         */
         inspectAndValidateCSV(matrix, sheetName = 'Planilha de Relatório') {
             if (!matrix || matrix.length <= 1) {
                 return {
@@ -212,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
 
-                    // Validação amostral de integridade de vírgulas/decimais
                     const itemName = String(row[0] || '').trim();
                     if (itemName.toLowerCase().includes('gases') && rawStr === '6435') {
                         validationErrors.push({
@@ -352,7 +346,398 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 5. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
+    // 5. CAMADA DE APRESENTAÇÃO: PAINEL ANALÍTICO (ResultViewEngine)
+    // ------------------------------------------------------------------------
+
+    const ResultViewEngine = {
+        activeMode: 'planilha',
+        itemSearchQuery: '',
+
+        categorizeItem(itemName) {
+            if (!itemName) return 'Despesas Gerais';
+            const norm = normalizeHeaderName(itemName);
+
+            if (norm.includes('TOTAL') || norm.includes('SUM')) return 'TOTAL GERAL';
+
+            if (norm.includes('REMUNERAC') || norm.includes('BENEFIC') || norm.includes('HORA EXTRA') || 
+                norm.includes('PESSOAL') || norm.includes('ESTATUTAR') || norm.includes('CLT') || 
+                norm.includes('AGENTES') || norm.includes('ESTAGIAR') || norm.includes('BOLSIST')) {
+                return 'Pessoal';
+            }
+
+            if (norm.includes('FORMULA') || norm.includes('GAS') || norm.includes('LIMPEZA') || 
+                norm.includes('PROTECAO') || norm.includes('VACINA') || norm.includes('MEDICAMENT') || 
+                norm.includes('INSUMO') || norm.includes('CONSUMO') || norm.includes('ODONTO')) {
+                return 'Material de Consumo';
+            }
+
+            if (norm.includes('VEICULO') || norm.includes('LAVANDERIA') || norm.includes('VETOR') || 
+                norm.includes('COPIA') || norm.includes('TECNOLOGIA') || norm.includes('MV') || 
+                norm.includes('LABORAT') || norm.includes('TERCEIR') || norm.includes('MANUTEN')) {
+                return 'Serviços de Terceiros';
+            }
+
+            return 'Despesas Gerais';
+        },
+
+        init() {
+            if (!resultModeSelectorBar) return;
+            const modeBtns = resultModeSelectorBar.querySelectorAll('.btn-result-mode');
+            modeBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    modeBtns.forEach(b => b.classList.remove('active'));
+                    e.currentTarget.classList.add('active');
+                    this.activeMode = e.currentTarget.dataset.mode;
+                    this.render();
+                });
+            });
+        },
+
+        render() {
+            if (!resultDashboardContainer || !tableWrapper || !resultModeSelectorBar) return;
+
+            if (appSession.activeViewSheet !== 'result' || !FinalProcessor.isReady) {
+                resultModeSelectorBar.classList.add('hidden');
+                resultDashboardContainer.classList.add('hidden');
+                return;
+            }
+
+            resultModeSelectorBar.classList.remove('hidden');
+
+            if (this.activeMode === 'planilha') {
+                resultDashboardContainer.classList.add('hidden');
+                tableWrapper.classList.remove('hidden');
+                renderSpreadsheetTable(FinalProcessor.resultMatrix);
+            } else {
+                tableWrapper.classList.add('hidden');
+                resultDashboardContainer.classList.remove('hidden');
+
+                if (this.activeMode === 'topico') {
+                    this.renderPorTopico(resultDashboardContainer);
+                } else if (this.activeMode === 'item') {
+                    this.renderPorItem(resultDashboardContainer);
+                } else if (this.activeMode === 'mes') {
+                    this.renderPorMes(resultDashboardContainer);
+                } else if (this.activeMode === 'origem') {
+                    this.renderPorOrigem(resultDashboardContainer);
+                }
+            }
+        },
+
+        renderPorTopico(container) {
+            container.innerHTML = '';
+
+            const matrix = FinalProcessor.resultMatrix;
+            if (!matrix || matrix.length === 0) return;
+
+            const headerRow = matrix[0] || [];
+            const dataRows = matrix.slice(1);
+
+            const groups = {
+                'Pessoal': [],
+                'Material de Consumo': [],
+                'Serviços de Terceiros': [],
+                'Despesas Gerais': [],
+                'TOTAL GERAL': []
+            };
+
+            dataRows.forEach((row, rIdx) => {
+                const itemName = row[0] !== undefined && row[0] !== null ? String(row[0]).trim() : '';
+                if (itemName === '') return;
+
+                const category = this.categorizeItem(itemName);
+                if (groups[category]) {
+                    groups[category].push({ itemName, row, rIdx: rIdx + 1 });
+                }
+            });
+
+            const fragment = document.createDocumentFragment();
+
+            Object.keys(groups).forEach(groupName => {
+                const items = groups[groupName];
+                if (items.length === 0 && groupName !== 'TOTAL GERAL') return;
+
+                const card = document.createElement('div');
+                card.className = `dashboard-topic-card ${groupName === 'TOTAL GERAL' ? 'highlight-card' : ''}`;
+
+                const header = document.createElement('div');
+                header.className = 'dashboard-topic-header';
+                header.innerHTML = `
+                    <div class="topic-header-title">
+                        <span>${groupName === 'TOTAL GERAL' ? '🏁' : '📂'} ${groupName}</span>
+                        <span class="topic-badge-count">${items.length} item${items.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <span class="toggle-icon">▼</span>
+                `;
+
+                const body = document.createElement('div');
+                body.className = 'dashboard-topic-body';
+
+                let tableHtml = '<table class="inspector-preview-table"><thead><tr><th>Item de Custo</th>';
+                for (let c = 1; c < headerRow.length; c++) {
+                    tableHtml += `<th>${headerRow[c] || 'Mês ' + c}</th>`;
+                }
+                tableHtml += '</tr></thead><tbody>';
+
+                items.forEach(it => {
+                    tableHtml += `<tr><td><b>${it.itemName}</b></td>`;
+                    for (let c = 1; c < headerRow.length; c++) {
+                        const cellVal = it.row[c] !== undefined && it.row[c] !== null ? String(it.row[c]) : '';
+                        const status = FinalProcessor.cellStatusMap[`${it.rIdx}_${c}`];
+                        let statusClass = '';
+                        if (status === 'MATCH') statusClass = 'cell-match';
+                        else if (status === 'MISSING') statusClass = 'cell-missing';
+                        else if (status === 'DIVERGENT') statusClass = 'cell-divergent';
+
+                        tableHtml += `<td class="${statusClass}">${cellVal}</td>`;
+                    }
+                    tableHtml += '</tr>';
+                });
+
+                tableHtml += '</tbody></table>';
+                body.innerHTML = tableHtml;
+
+                header.addEventListener('click', () => {
+                    const isHidden = body.style.display === 'none';
+                    body.style.display = isHidden ? 'block' : 'none';
+                    header.querySelector('.toggle-icon').textContent = isHidden ? '▼' : '▶';
+                });
+
+                card.appendChild(header);
+                card.appendChild(body);
+                fragment.appendChild(card);
+            });
+
+            container.appendChild(fragment);
+        },
+
+        renderPorItem(container) {
+            container.innerHTML = '';
+
+            const matrix = FinalProcessor.resultMatrix;
+            if (!matrix || matrix.length === 0) return;
+
+            const headerRow = matrix[0] || [];
+            const dataRows = matrix.slice(1);
+
+            const searchBar = document.createElement('div');
+            searchBar.className = 'dashboard-item-search-bar';
+            searchBar.innerHTML = `
+                <input type="text" class="dashboard-item-search-input" id="dashboardItemSearchInput" placeholder="🔍 Localizar item de custo..." value="${this.itemSearchQuery}">
+            `;
+            container.appendChild(searchBar);
+
+            const searchInput = searchBar.querySelector('#dashboardItemSearchInput');
+            searchInput.addEventListener('input', (e) => {
+                this.itemSearchQuery = e.target.value;
+                this.renderPorItem(container);
+            });
+
+            const listContainer = document.createElement('div');
+            const fragment = document.createDocumentFragment();
+
+            const query = this.itemSearchQuery.toLowerCase().trim();
+
+            dataRows.forEach((row, rIdx) => {
+                const itemName = row[0] !== undefined && row[0] !== null ? String(row[0]).trim() : '';
+                if (itemName === '') return;
+                if (query !== '' && !itemName.toLowerCase().includes(query)) return;
+
+                const category = this.categorizeItem(itemName);
+
+                const itemRowCard = document.createElement('div');
+                itemRowCard.className = 'item-card-row';
+
+                let monthsPillsHtml = '';
+                for (let c = 1; c < headerRow.length; c++) {
+                    const mName = headerRow[c] || `Mês ${c}`;
+                    const val = row[c] !== undefined && row[c] !== null ? String(row[c]) : '-';
+                    const status = FinalProcessor.cellStatusMap[`${rIdx + 1}_${c}`];
+                    let badgeColor = '';
+                    if (status === 'MATCH') badgeColor = 'style="border-color: #22c55e;"';
+                    else if (status === 'MISSING') badgeColor = 'style="border-color: #f97316;"';
+                    else if (status === 'DIVERGENT') badgeColor = 'style="border-color: #ef4444;"';
+
+                    monthsPillsHtml += `
+                        <div class="month-value-pill" ${badgeColor}>
+                            <span class="month-label">${mName}</span>
+                            <span class="month-val">${val}</span>
+                        </div>
+                    `;
+                }
+
+                itemRowCard.innerHTML = `
+                    <div class="item-card-header">
+                        <span class="item-card-title">📌 ${itemName}</span>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <span class="origin-badge-pill origin-apurasus">ApuraSUS</span>
+                            <span class="topic-badge-count">${category}</span>
+                        </div>
+                    </div>
+                    <div class="item-card-months-grid">
+                        ${monthsPillsHtml}
+                    </div>
+                `;
+
+                fragment.appendChild(itemRowCard);
+            });
+
+            listContainer.appendChild(fragment);
+            container.appendChild(listContainer);
+        },
+
+        renderPorMes(container) {
+            container.innerHTML = '';
+
+            const matrix = FinalProcessor.resultMatrix;
+            if (!matrix || matrix.length === 0) return;
+
+            const headerRow = matrix[0] || [];
+            const dataRows = matrix.slice(1);
+
+            const fragment = document.createDocumentFragment();
+
+            for (let c = 1; c < headerRow.length; c++) {
+                const monthName = headerRow[c] || `Mês ${c}`;
+
+                const card = document.createElement('div');
+                card.className = 'dashboard-topic-card';
+
+                const header = document.createElement('div');
+                header.className = 'dashboard-topic-header';
+                header.innerHTML = `
+                    <div class="topic-header-title">
+                        <span>📅 ${monthName}</span>
+                        <span class="topic-badge-count">${dataRows.length} custos</span>
+                    </div>
+                    <span class="toggle-icon">▼</span>
+                `;
+
+                const body = document.createElement('div');
+                body.className = 'dashboard-topic-body';
+
+                let monthTableHtml = `
+                    <table class="inspector-preview-table">
+                        <thead>
+                            <tr>
+                                <th>Item de Custo</th>
+                                <th>Categoria</th>
+                                <th>Valor Registrado (${monthName})</th>
+                                <th>Status do Cruzamento</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                dataRows.forEach((row, rIdx) => {
+                    const itemName = row[0] !== undefined && row[0] !== null ? String(row[0]).trim() : '';
+                    if (itemName === '') return;
+
+                    const val = row[c] !== undefined && row[c] !== null ? String(row[c]) : '-';
+                    const category = this.categorizeItem(itemName);
+                    const status = FinalProcessor.cellStatusMap[`${rIdx + 1}_${c}`];
+                    let statusLabel = '⚪ Padrão';
+                    let statusClass = '';
+                    if (status === 'MATCH') { statusLabel = '🟢 MATCH'; statusClass = 'cell-match'; }
+                    else if (status === 'MISSING') { statusLabel = '🟠 MISSING'; statusClass = 'cell-missing'; }
+                    else if (status === 'DIVERGENT') { statusLabel = '🔴 DIVERGENT'; statusClass = 'cell-divergent'; }
+
+                    monthTableHtml += `
+                        <tr>
+                            <td><b>${itemName}</b></td>
+                            <td><span class="topic-badge-count" style="font-size: 0.7rem;">${category}</span></td>
+                            <td class="${statusClass}"><b>${val}</b></td>
+                            <td>${statusLabel}</td>
+                        </tr>
+                    `;
+                });
+
+                monthTableHtml += '</tbody></table>';
+                body.innerHTML = monthTableHtml;
+
+                header.addEventListener('click', () => {
+                    const isHidden = body.style.display === 'none';
+                    body.style.display = isHidden ? 'block' : 'none';
+                    header.querySelector('.toggle-icon').textContent = isHidden ? '▼' : '▶';
+                });
+
+                card.appendChild(header);
+                card.appendChild(body);
+                fragment.appendChild(card);
+            }
+
+            container.appendChild(fragment);
+        },
+
+        renderPorOrigem(container) {
+            container.innerHTML = '';
+
+            const origens = [
+                {
+                    id: 'apurasus',
+                    title: 'ApuraSUS (Planilha de Relatório)',
+                    badgeClass: 'origin-apurasus',
+                    status: '🟢 Ativo & Carregado',
+                    description: 'Fonte primária dos parâmetros e matriz base de relatórios financeiros de custos da Unidade.',
+                    hasData: true
+                },
+                {
+                    id: 'siga',
+                    title: 'RH (SIGA)',
+                    badgeClass: 'origin-siga',
+                    status: appSession.sigaCollection.length > 0 ? `🟢 Coleção Ativa (${appSession.sigaCollection.length} arquivos)` : '🟡 Aguardando arquivos do SIGA',
+                    description: 'Fonte de dados de recursos humanos e despesas de pessoal mensal.',
+                    hasData: appSession.sigaCollection.length > 0
+                },
+                {
+                    id: 'drive',
+                    title: 'Planilha do Drive',
+                    badgeClass: 'origin-drive',
+                    status: appSession.driveMatrix.length > 0 ? '🟢 Arquivo do Drive Carregado' : '🟡 Aguardando arquivo do Drive',
+                    description: 'Fonte de referência de valores informados nas planilhas do Google Drive.',
+                    hasData: appSession.driveMatrix.length > 0
+                },
+                {
+                    id: 'sigss',
+                    title: 'Sistema SIGSS',
+                    badgeClass: 'origin-sigss',
+                    status: '⚪ Preparado para Futura Integração',
+                    description: 'Módulo reservado para integração direta com a base do SIGSS em versões futuras.',
+                    hasData: false
+                }
+            ];
+
+            const fragment = document.createDocumentFragment();
+
+            origens.forEach(orig => {
+                const card = document.createElement('div');
+                card.className = 'dashboard-topic-card';
+
+                card.innerHTML = `
+                    <div class="dashboard-topic-header" style="cursor: default;">
+                        <div class="topic-header-title">
+                            <span class="origin-badge-pill ${orig.badgeClass}">${orig.title}</span>
+                            <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">${orig.status}</span>
+                        </div>
+                    </div>
+                    <div class="dashboard-topic-body">
+                        <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem;">${orig.description}</p>
+                        ${orig.hasData 
+                            ? `<div style="padding: 0.75rem; background: var(--bg-primary); border-radius: 6px; font-weight: 600; color: var(--accent-color);">✔ Origem preenchida e integrada ao pipeline atual.</div>`
+                            : `<div style="padding: 0.75rem; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; font-size: 0.85rem; color: #d48806;">ℹ️ Esta origem de dados será preenchida automaticamente conforme os próximos cruzamentos forem consolidados.</div>`
+                        }
+                    </div>
+                `;
+
+                fragment.appendChild(card);
+            });
+
+            container.appendChild(fragment);
+        }
+    };
+
+    // ------------------------------------------------------------------------
+    // 6. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
     // ------------------------------------------------------------------------
 
     const appSession = {
@@ -669,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentInspectorTimelineLogs = [];
 
     // ------------------------------------------------------------------------
-    // 6. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
+    // 7. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
     // ------------------------------------------------------------------------
 
     const TEMPORAL_REFERENCE = {
@@ -748,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 7. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
+    // 8. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -843,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 8. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 9. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -1326,7 +1711,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 10. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -1549,7 +1934,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 10. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
+    // 11. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -1659,7 +2044,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 11. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
+    // 12. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -2169,7 +2554,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 12. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 13. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function viewReportSheetInTable() {
@@ -2181,6 +2566,9 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorSheetSubtitle.textContent = "Visualização do relatório tratado (6 linhas do topo e colunas vazias removidas).";
 
         summaryContainer.classList.add('hidden');
+        resultModeSelectorBar.classList.add('hidden');
+        resultDashboardContainer.classList.add('hidden');
+
         renderSpreadsheetTable(appSession.reportMatrix);
         renderInspectorUI();
         updateMinimalHeaderUI();
@@ -2200,6 +2588,9 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorSheetTitle.textContent = `🔍 Inspector do Pipeline (Planilha do SIGA - ${item.monthLabel})`;
         inspectorSheetSubtitle.textContent = `Visualização tratada do arquivo ${item.fileName} (${item.monthLabel}).`;
 
+        resultModeSelectorBar.classList.add('hidden');
+        resultDashboardContainer.classList.add('hidden');
+
         renderFinancialSummaryCards(item.summaryData, item.monthLabel);
         renderSpreadsheetTable(item.treatedMatrix);
         renderInspectorUI();
@@ -2216,6 +2607,9 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorSheetSubtitle.textContent = "Acompanhe o filtro de colunas por datas e a remoção de linhas vazias no Drive.";
 
         summaryContainer.classList.add('hidden');
+        resultModeSelectorBar.classList.add('hidden');
+        resultDashboardContainer.classList.add('hidden');
+
         renderSpreadsheetTable(appSession.driveMatrix);
         renderInspectorUI();
         updateMinimalHeaderUI();
@@ -2233,10 +2627,11 @@ document.addEventListener('DOMContentLoaded', () => {
         currentInspectorTimelineLogs = FinalProcessor.resultInspector.timelineLogs;
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final)";
-        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive (Preservando Strings Brutas nas Células).";
+        inspectorSheetSubtitle.textContent = "Painel Analítico de Gestão e Cruzamento de Dados.";
 
         summaryContainer.classList.add('hidden');
-        renderSpreadsheetTable(FinalProcessor.resultMatrix);
+
+        ResultViewEngine.render();
         renderInspectorUI();
         updateMinimalHeaderUI();
         renderSigaManagerList();
@@ -2278,6 +2673,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dropZone.addEventListener('drop', handleDrop);
 
         initTabNavigation();
+        ResultViewEngine.init();
     }
 
     function handleFileSelect(event) {
@@ -2342,6 +2738,9 @@ document.addEventListener('DOMContentLoaded', () => {
         FinalProcessor.resultMatrix = [];
         FinalProcessor.cellStatusMap = {};
 
+        ResultViewEngine.activeMode = 'planilha';
+        ResultViewEngine.itemSearchQuery = '';
+
         resetInspectorData();
 
         tableHead.innerHTML = '';
@@ -2350,6 +2749,12 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorStepsContainer.innerHTML = '';
         inspectorLogTimeline.innerHTML = '';
         sigaManagerList.innerHTML = '';
+
+        if (resultModeSelectorBar) resultModeSelectorBar.classList.add('hidden');
+        if (resultDashboardContainer) {
+            resultDashboardContainer.innerHTML = '';
+            resultDashboardContainer.classList.add('hidden');
+        }
 
         updateWizardUI();
         updateMinimalHeaderUI();
@@ -2370,7 +2775,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 13. LEITURA DE ARQUIVO (FASE 1 - SUPORTE A CSV BRASILEIRO E EXCEL BRUTO)
+    // 14. LEITURA DE ARQUIVO (FASE 1 - SUPORTE A CSV BRASILEIRO E EXCEL BRUTO)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -2443,7 +2848,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 14. RENDERIZAÇÃO DA TABELA (RECONSTRUÇÃO FIEL DE TEXTO BRUTO)
+    // 15. RENDERIZAÇÃO DA TABELA (RECONSTRUÇÃO FIEL DE TEXTO BRUTO)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -2521,10 +2926,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const rawCellValue = rowData[colIdx];
 
-                // RECONSTRUÇÃO FIEL: EXIBE EXATAMENTE O TEXTO BRUTO ARMAZENADO (EX: "64,35", "1251,80")
                 td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
 
-                // APLICAÇÃO DE DESTAQUE VISUAL DE CÉLULAS APENAS NO RESULTADO FINAL E EM COLUNAS DE MESES (colIdx > 0)
                 if (isResultView && colIdx > 0) {
                     const status = FinalProcessor.cellStatusMap[`${actualRowIdx}_${colIdx}`];
                     if (status === 'MATCH') {
