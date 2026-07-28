@@ -1,18 +1,19 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Estilo Excel + Pipeline SIGA + Resumo Financeiro)
+ * Importador de Planilhas - app.js (Resiliência & Modo Debug de Diagnóstico)
  * ----------------------------------------------------------------------------
  * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, escolha do
- * tipo de planilha, tratamento via pipeline e geração de resumo financeiro.
+ * tipo de planilha, tratamento robusto via pipeline e diagnóstico avançado.
  * 
  * Arquitetura em Módulos:
- * 1. Mapeamento & Utilidades (Excel & Number Utilities)
- * 2. Motor de Regras & Pipelines (Treatment Pipeline Engine)
- * 3. Módulo do Resumo Financeiro (Financial Summary Engine)
- * 4. Gerenciamento do Modal (Modal Controller)
- * 5. Interface & Eventos (UI Controller)
- * 6. Leitura de Arquivo (Spreadsheet Reader)
- * 7. Renderização da Tabela & Cards (Render Controller)
+ * 1. Mapeamento & Utilidades (Header Normalization & Number Utilities)
+ * 2. Módulo de Diagnóstico (Debug & Diagnostic Engine)
+ * 3. Motor de Regras & Pipelines (Treatment Pipeline Engine)
+ * 4. Módulo do Resumo Financeiro (Financial Summary Engine)
+ * 5. Gerenciamento do Modal (Modal Controller)
+ * 6. Interface & Eventos (UI Controller)
+ * 7. Leitura de Arquivo (Spreadsheet Reader)
+ * 8. Renderização da Tabela & Debug (Render Controller)
  * ============================================================================
  */
 
@@ -34,6 +35,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryContainer = document.getElementById('summaryContainer');
     const summaryGrid = document.getElementById('summaryGrid');
 
+    // Elementos do Modo Debug
+    const btnToggleDebug = document.getElementById('btnToggleDebug');
+    const debugPanel = document.getElementById('debugPanel');
+    const debugGrid = document.getElementById('debugGrid');
+    const debugWarningsContainer = document.getElementById('debugWarningsContainer');
+
     // Elementos do Modal
     const typeSelectionModal = document.getElementById('typeSelectionModal');
     const modalCloseBtn = document.getElementById('modalCloseBtn');
@@ -49,11 +56,28 @@ document.addEventListener('DOMContentLoaded', () => {
         treatedMatrixData: [],
         selectedCell: null,
         selectedType: null,
-        summaryData: {}
+        summaryData: {},
+        isDebugMode: false
+    };
+
+    // Estado de Diagnóstico (Debug Context)
+    const debugContext = {
+        rawRowsCount: 0,
+        rawColsCount: 0,
+        originalHeaders: [],
+        normalizedHeaders: [],
+        removedTopRowsCount: 0,
+        removedBottomRowsCount: 0,
+        removedEmptyColsCount: 0,
+        removedSpecificColsLog: [],
+        renamedColsLog: [],
+        groupedCategoriesLog: [],
+        missingExpectedCols: [],
+        categoryTotals: {}
     };
 
     // ------------------------------------------------------------------------
-    // 1. MAPEAMENTO & UTILIDADES (Excel & Number Utilities)
+    // 1. MAPEAMENTO & UTILIDADES (Header Normalization & Number Utilities)
     // ------------------------------------------------------------------------
 
     /**
@@ -74,9 +98,33 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     /**
-     * Converte um índice numérico de coluna em letras do Excel (0 -> A, 1 -> B, 25 -> Z, 26 -> AA...).
-     * @param {number} index - Índice zero-based da coluna.
-     * @returns {string} Identificador alfabético da coluna.
+     * Normaliza nomes de cabeçalhos eliminando variações de digitação, espaços extras,
+     * caracteres invisíveis (\r, \n, \t, \u00A0), e convertendo para CAIXA ALTA.
+     * 
+     * @param {any} header 
+     * @returns {string} Cabeçalho limpo e padronizado para comparação robusta
+     */
+    function normalizeHeaderName(header) {
+        if (header === null || header === undefined) return '';
+        let str = String(header);
+
+        // 1. Remove caracteres invisíveis de controle (ASCII 0-31 e 127-159) e espaço inseparável
+        str = str.replace(/[\u0000-\u001F\u007F-\u009F\u00A0\uFEFF]/g, ' ');
+
+        // 2. Substitui quebras de linha e tabulações por um espaço simples
+        str = str.replace(/[\r\n\t]+/g, ' ');
+
+        // 3. Reduz múltiplos espaços internos sequenciais a apenas um espaço
+        str = str.replace(/\s+/g, ' ');
+
+        // 4. Remove espaços nas extremidades e converte para CAIXA ALTA
+        return str.trim().toUpperCase();
+    }
+
+    /**
+     * Converte um índice numérico de coluna em letras do Excel (0 -> A, 1 -> B, 25 -> Z...).
+     * @param {number} index 
+     * @returns {string}
      */
     function getExcelColumnName(index) {
         let colName = '';
@@ -103,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Verifica se uma célula está vazia.
+     * Verifica se uma célula está completamente vazia.
      * @param {any} value 
      * @returns {boolean}
      */
@@ -114,7 +162,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Converte um valor bruto de célula em número válido (suporta decimais, negativos e formato pt-BR).
+     * Parser numérico blindado à prova de NaN.
+     * Aceita moedas (R$), decimais com vírgula ou ponto, inteiros, negativos e texto numérico.
+     * Células vazias ou inválidas retornam 0.
+     * 
      * @param {any} val 
      * @returns {number}
      */
@@ -125,15 +176,23 @@ document.addEventListener('DOMContentLoaded', () => {
         let str = String(val).trim();
         if (str === '') return 0;
 
-        // Trata formato de moeda/número brasileiro ("1.234,56" ou "-1.234,56")
+        // Trata formato de moeda/número brasileiro ou americano
         if (str.includes(',') && str.includes('.')) {
-            str = str.replace(/\./g, '').replace(',', '.');
+            // "1.250,50" -> remove o ponto de milhar e troca a vírgula decimal por ponto
+            if (str.indexOf('.') < str.indexOf(',')) {
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else {
+                // "1,250.50" -> formato americano
+                str = str.replace(/,/g, '');
+            }
         } else if (str.includes(',')) {
+            // "1250,50" -> troca vírgula por ponto
             str = str.replace(',', '.');
         }
 
-        // Remove quaisquer caracteres que não sejam dígitos, sinal de menos ou ponto decimal
+        // Remove R$, espaços e caracteres não numéricos exceto hífen (negativo) e ponto
         str = str.replace(/[^\d.-]/g, '');
+
         const parsed = parseFloat(str);
         return isNaN(parsed) ? 0 : parsed;
     }
@@ -148,20 +207,132 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 2. MOTOR DE REGRAS & PIPELINES (Treatment Pipeline Engine)
+    // 2. MÓDULO DE DIAGNÓSTICO (Debug & Diagnostic Engine)
     // ------------------------------------------------------------------------
 
-    /**
-     * Regra 1: Remover as `count` primeiras linhas.
-     */
-    function removeTopRowsRule(matrix, count = 3) {
-        if (!matrix || matrix.length <= count) return [];
-        return matrix.slice(count);
+    function resetDebugContext() {
+        debugContext.rawRowsCount = 0;
+        debugContext.rawColsCount = 0;
+        debugContext.originalHeaders = [];
+        debugContext.normalizedHeaders = [];
+        debugContext.removedTopRowsCount = 0;
+        debugContext.removedBottomRowsCount = 0;
+        debugContext.removedEmptyColsCount = 0;
+        debugContext.removedSpecificColsLog = [];
+        debugContext.renamedColsLog = [];
+        debugContext.groupedCategoriesLog = [];
+        debugContext.missingExpectedCols = [];
+        debugContext.categoryTotals = {};
     }
 
     /**
-     * Regra 2: Remover colunas 100% vazias.
+     * Renderiza o painel de diagnóstico com todas as métricas e avisos do Modo Debug.
      */
+    function renderDebugPanel() {
+        if (!appState.isDebugMode) {
+            debugPanel.classList.add('hidden');
+            return;
+        }
+
+        debugPanel.classList.remove('hidden');
+        debugWarningsContainer.innerHTML = '';
+        debugGrid.innerHTML = '';
+
+        // --- A. Renderiza Avisos de Colunas Ausentes ---
+        if (debugContext.missingExpectedCols.length > 0) {
+            debugWarningsContainer.classList.remove('hidden');
+            debugContext.missingExpectedCols.forEach(missingCol => {
+                const warnCard = document.createElement('div');
+                warnCard.className = 'debug-warning-card';
+                warnCard.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span><strong>Aviso de Diagnóstico:</strong> Coluna esperada não encontrada na planilha: <code>${missingCol}</code></span>
+                `;
+                debugWarningsContainer.appendChild(warnCard);
+            });
+        } else {
+            debugWarningsContainer.classList.add('hidden');
+        }
+
+        // --- B. Card 1: Métricas de Entrada & Importação ---
+        const cardImport = document.createElement('div');
+        cardImport.className = 'debug-card';
+        cardImport.innerHTML = `
+            <div class="debug-card-title">1. Dados Importados</div>
+            <div class="debug-metric-list">
+                <div class="debug-metric-item"><span class="debug-metric-label">Linhas Brutas:</span><span class="debug-metric-value">${debugContext.rawRowsCount}</span></div>
+                <div class="debug-metric-item"><span class="debug-metric-label">Colunas Brutas:</span><span class="debug-metric-value">${debugContext.rawColsCount}</span></div>
+                <div class="debug-metric-item"><span class="debug-metric-label">Arquivo:</span><span class="debug-metric-value">${appState.currentFile ? appState.currentFile.name : 'Nenhum'}</span></div>
+            </div>
+        `;
+
+        // --- C. Card 2: Mapeamento & Normalização de Cabeçalhos ---
+        const cardHeaders = document.createElement('div');
+        cardHeaders.className = 'debug-card';
+        const normItems = debugContext.normalizedHeaders.map((norm, idx) => {
+            const orig = debugContext.originalHeaders[idx] || '';
+            return `<div><strong>${getExcelColumnName(idx)}:</strong> "${orig}" ➔ <code>"${norm}"</code></div>`;
+        }).join('');
+        cardHeaders.innerHTML = `
+            <div class="debug-card-title">2. Normalização de Cabeçalhos</div>
+            <div class="debug-log-box">${normItems || 'Nenhum cabeçalho identificado'}</div>
+        `;
+
+        // --- D. Card 3: Transformações & Remoções de Estrutura ---
+        const cardRemovals = document.createElement('div');
+        cardRemovals.className = 'debug-card';
+        cardRemovals.innerHTML = `
+            <div class="debug-card-title">3. Remoções do Pipeline</div>
+            <div class="debug-metric-list">
+                <div class="debug-metric-item"><span class="debug-metric-label">Linhas do Topo Removidas:</span><span class="debug-metric-value">${debugContext.removedTopRowsCount}</span></div>
+                <div class="debug-metric-item"><span class="debug-metric-label">Linhas do Rodapé Removidas:</span><span class="debug-metric-value">${debugContext.removedBottomRowsCount}</span></div>
+                <div class="debug-metric-item"><span class="debug-metric-label">Colunas Vazias Removidas:</span><span class="debug-metric-value">${debugContext.removedEmptyColsCount}</span></div>
+                <div class="debug-metric-item"><span class="debug-metric-label">Colunas Específicas Removidas:</span><span class="debug-metric-value">${debugContext.removedSpecificColsLog.join(', ') || 'Nenhuma'}</span></div>
+            </div>
+        `;
+
+        // --- E. Card 4: Renomeações & Agrupamentos ---
+        const cardRenames = document.createElement('div');
+        cardRenames.className = 'debug-card';
+        const renameLogs = debugContext.renamedColsLog.map(item => `<div>• <code>${item.original}</code> ➔ <strong>${item.renamed}</strong></div>`).join('');
+        cardRenames.innerHTML = `
+            <div class="debug-card-title">4. Renomeação & Agrupamento</div>
+            <div class="debug-log-box">${renameLogs || 'Nenhuma coluna renomeada'}</div>
+        `;
+
+        // --- F. Card 5: Resumo Calculado por Categoria ---
+        const cardTotals = document.createElement('div');
+        cardTotals.className = 'debug-card';
+        const totalItems = Object.keys(debugContext.categoryTotals).map(cat => {
+            return `<div class="debug-metric-item"><span class="debug-metric-label">${cat}:</span><span class="debug-metric-value">${formatBRL(debugContext.categoryTotals[cat])}</span></div>`;
+        }).join('');
+        cardTotals.innerHTML = `
+            <div class="debug-card-title">5. Totais Calculados</div>
+            <div class="debug-metric-list">${totalItems || 'Nenhum total calculado'}</div>
+        `;
+
+        debugGrid.appendChild(cardImport);
+        debugGrid.appendChild(cardHeaders);
+        debugGrid.appendChild(cardRemovals);
+        debugGrid.appendChild(cardRenames);
+        debugGrid.appendChild(cardTotals);
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. MOTOR DE REGRAS & PIPELINES (Treatment Pipeline Engine)
+    // ------------------------------------------------------------------------
+
+    function removeTopRowsRule(matrix, count = 3) {
+        if (!matrix || matrix.length <= count) {
+            debugContext.removedTopRowsCount = matrix ? matrix.length : 0;
+            return [];
+        }
+        debugContext.removedTopRowsCount = count;
+        return matrix.slice(count);
+    }
+
     function removeEmptyColumnsRule(matrix) {
         if (!matrix || matrix.length === 0) return [];
 
@@ -185,16 +356,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        debugContext.removedEmptyColsCount = maxCols - nonArrayColIndices.length;
         return matrix.map(row => nonArrayColIndices.map(colIdx => row[colIdx]));
     }
 
-    /**
-     * Regra 3: Remover colunas específicas por letras (J, I, H, G, A nesta ordem).
-     */
     function removeSpecificColumnsByLetterRule(matrix, lettersOrder = ['J', 'I', 'H', 'G', 'A']) {
         if (!matrix || matrix.length === 0) return [];
 
         let currentMatrix = matrix.map(row => [...row]);
+        debugContext.removedSpecificColsLog = [];
 
         lettersOrder.forEach(letter => {
             const targetIdx = excelColumnNameToIndex(letter);
@@ -211,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         newRow.splice(targetIdx, 1);
                         return newRow;
                     });
+                    debugContext.removedSpecificColsLog.push(letter);
                 }
             }
         });
@@ -218,19 +389,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return currentMatrix;
     }
 
-    /**
-     * Regra 4: Remover as `count` últimas linhas.
-     */
     function removeBottomRowsRule(matrix, count = 2) {
-        if (!matrix || matrix.length <= count) return [];
+        if (!matrix || matrix.length <= count) {
+            debugContext.removedBottomRowsCount = matrix ? matrix.length : 0;
+            return [];
+        }
+        debugContext.removedBottomRowsCount = count;
         return matrix.slice(0, matrix.length - count);
     }
 
     /**
-     * Regra 5: Padronização dos nomes das colunas de acordo com a tabela de mapeamento.
-     * @param {Array<Array<any>>} matrix 
-     * @param {Object} nameMap 
-     * @returns {Array<Array<any>>}
+     * Regra 5: Padronização dos nomes das colunas com comparações normalizadas e robustas.
      */
     function standardizeHeaderNamesRule(matrix, nameMap = COLUMN_NAME_MAP) {
         if (!matrix || matrix.length === 0) return [];
@@ -238,26 +407,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const updatedMatrix = matrix.map(row => [...row]);
         const headerRow = updatedMatrix[0] || [];
 
-        const newHeaderRow = headerRow.map(cell => {
-            const cellStr = String(cell).trim().toUpperCase();
+        debugContext.originalHeaders = [...headerRow];
+        debugContext.normalizedHeaders = headerRow.map(h => normalizeHeaderName(h));
+        debugContext.renamedColsLog = [];
+        debugContext.missingExpectedCols = [];
 
-            // Procura correspondência insensível a maiúsculas/minúsculas
-            const foundKey = Object.keys(nameMap).find(key => key.toUpperCase() === cellStr);
-            if (foundKey) {
-                return nameMap[foundKey];
+        // Prepara o dicionário de busca com chaves normalizadas
+        const normalizedMap = {};
+        Object.keys(nameMap).forEach(key => {
+            normalizedMap[normalizeHeaderName(key)] = nameMap[key];
+        });
+
+        const foundNormalizedKeys = new Set();
+
+        const newHeaderRow = headerRow.map(cell => {
+            const normCell = normalizeHeaderName(cell);
+            if (normalizedMap[normCell]) {
+                const newName = normalizedMap[normCell];
+                debugContext.renamedColsLog.push({
+                    original: String(cell).trim(),
+                    renamed: newName
+                });
+                foundNormalizedKeys.add(normCell);
+                return newName;
             }
             return cell;
+        });
+
+        // Identifica quais colunas mapeadas esperadas NÃO foram encontradas
+        Object.keys(COLUMN_NAME_MAP).forEach(key => {
+            const normKey = normalizeHeaderName(key);
+            if (!foundNormalizedKeys.has(normKey)) {
+                debugContext.missingExpectedCols.push(key);
+            }
         });
 
         updatedMatrix[0] = newHeaderRow;
         return updatedMatrix;
     }
 
-    /**
-     * Registro de Pipelines de Tratamento por Tipo de Planilha.
-     */
     const SPREADSHEET_PIPELINES = {
-        // Fluxo "Planilha do SIGA": Regras 1, 2, 3, 4 e 5
         siga: [
             (matrix) => removeTopRowsRule(matrix, 3),                                        // Regra 1
             (matrix) => removeEmptyColumnsRule(matrix),                                       // Regra 2
@@ -268,12 +457,6 @@ document.addEventListener('DOMContentLoaded', () => {
         relatorio: []
     };
 
-    /**
-     * Executa o pipeline de tratamento correspondente.
-     * @param {string} sheetType 
-     * @param {Array<Array<any>>} rawMatrix 
-     * @returns {Array<Array<any>>}
-     */
     function runTreatmentPipeline(sheetType, rawMatrix) {
         const pipeline = SPREADSHEET_PIPELINES[sheetType];
         if (!pipeline || pipeline.length === 0) {
@@ -283,37 +466,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 3. MÓDULO DO RESUMO FINANCEIRO (Financial Summary Engine)
+    // 4. MÓDULO DO RESUMO FINANCEIRO (Financial Summary Engine)
     // ------------------------------------------------------------------------
 
-    /**
-     * Regra 6: Agrupa automaticamente todas as colunas financeiras padronizadas
-     * e calcula o somatório total acumulado de cada categoria.
-     * 
-     * @param {Array<Array<any>>} matrix - Matriz tratada (contendo o cabeçalho padronizado na linha 0)
-     * @returns {Object} Dicionário contendo { [categoriaPadronizada]: valorTotal }
-     */
     function calculateFinancialSummary(matrix) {
         if (!matrix || matrix.length <= 1) return {};
 
         const headerRow = matrix[0] || [];
         const dataRows = matrix.slice(1);
-
-        // Obter a lista de nomes padronizados válidos
         const validStandardNames = Array.from(new Set(Object.values(COLUMN_NAME_MAP)));
 
         const categoryTotals = {};
+        debugContext.groupedCategoriesLog = [];
 
-        // Mapeia todas as colunas que pertencem a alguma categoria padronizada
         headerRow.forEach((colName, colIdx) => {
             const trimmedName = String(colName).trim();
 
             if (validStandardNames.includes(trimmedName)) {
                 if (!categoryTotals[trimmedName]) {
                     categoryTotals[trimmedName] = 0;
+                    debugContext.groupedCategoriesLog.push(trimmedName);
                 }
 
-                // Soma todas as células daquela coluna nas linhas de dados
                 dataRows.forEach(row => {
                     const rawVal = row[colIdx];
                     const numVal = parseNumericValue(rawVal);
@@ -322,16 +496,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        debugContext.categoryTotals = categoryTotals;
         return categoryTotals;
     }
 
-    /**
-     * Renderiza o painel visual com cartões contendo os totais de cada categoria.
-     * @param {Object} summaryTotals - Objeto com os totais calculados { categoria: valor }
-     */
     function renderFinancialSummaryCards(summaryTotals) {
         summaryGrid.innerHTML = '';
-
         const categories = Object.keys(summaryTotals);
 
         if (categories.length === 0) {
@@ -365,7 +535,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
+    // 5. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
     // ------------------------------------------------------------------------
 
     function openTypeModal() {
@@ -403,13 +573,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryData = calculateFinancialSummary(treated);
         appState.summaryData = summaryData;
 
-        // 3. Renderiza os cartões de resumo e a tabela tratada
+        // 3. Renderiza o Modo Debug, Cartões e Tabela
         renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
+        renderDebugPanel();
     }
 
     // ------------------------------------------------------------------------
-    // 5. MÓDULO DE INTERFACE & EVENTOS (UI Controller)
+    // 6. MÓDULO DE INTERFACE & EVENTOS (UI Controller)
     // ------------------------------------------------------------------------
 
     function initEvents() {
@@ -419,6 +590,13 @@ document.addEventListener('DOMContentLoaded', () => {
         dropZone.addEventListener('dragover', handleDragOver);
         dropZone.addEventListener('dragleave', handleDragLeave);
         dropZone.addEventListener('drop', handleDrop);
+
+        // Evento de Alternância do Modo Debug
+        btnToggleDebug.addEventListener('click', () => {
+            appState.isDebugMode = !appState.isDebugMode;
+            btnToggleDebug.classList.toggle('active', appState.isDebugMode);
+            renderDebugPanel();
+        });
 
         modalCloseBtn.addEventListener('click', () => {
             closeTypeModal();
@@ -496,18 +674,21 @@ document.addEventListener('DOMContentLoaded', () => {
         appState.selectedType = null;
         appState.summaryData = {};
 
+        resetDebugContext();
+
         tableHead.innerHTML = '';
         tableBody.innerHTML = '';
         summaryGrid.innerHTML = '';
 
         summaryContainer.classList.add('hidden');
         tableWrapper.classList.add('hidden');
+        debugPanel.classList.add('hidden');
         emptyState.classList.remove('hidden');
         closeTypeModal();
     }
 
     // ------------------------------------------------------------------------
-    // 6. MÓDULO DE LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 7. MÓDULO DE LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -527,7 +708,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (rawMatrix && rawMatrix.length > 0) {
+                    resetDebugContext();
                     appState.rawMatrixData = rawMatrix;
+
+                    // Registra estatísticas iniciais de diagnóstico
+                    debugContext.rawRowsCount = rawMatrix.length;
+                    let maxCols = 0;
+                    rawMatrix.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
+                    debugContext.rawColsCount = maxCols;
+
                     openTypeModal();
                 } else {
                     alert('A planilha selecionada não possui dados.');
@@ -544,7 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 7. RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 8. RENDERIZAÇÃO DA TABELA (Table Renderer)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -562,7 +751,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.length > maxCols) maxCols = row.length;
         });
 
-        // --- A. Renderiza o Cabeçalho (Letras + Nome Inteligente Padronizado) ---
+        // --- A. Renderiza o Cabeçalho ---
         const trHead = document.createElement('tr');
         
         const thCorner = document.createElement('th');
