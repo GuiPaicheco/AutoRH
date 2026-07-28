@@ -1,17 +1,14 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Módulo Temporal & Filtro do Drive)
+ * Importador de Planilhas - app.js (Coleção Multiarquivos SIGA & Módulo Temporal)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) com arquitetura temporal
- * matemática centralizada baseada em datas.
- * 
- * Referência Temporal Centralizada:
- * Novembro / 2022 ➔ Índice 2
- * 
- * Módulos de Tratamento:
+ * Aplicação estática em JavaScript Puro (Vanilla JS) com suporte a:
  * - 1. Planilha de Relatório (A2 Unidade, remoção de 6 linhas e colunas vazias)
- * - 2. Planilha do SIGA (Tratamento de 5 passos + resumo financeiro BRL)
- * - 3. Planilha do Drive (Remoção da 1ª linha e filtro matemático de colunas por datas)
+ * - 2. Coleção Multiarquivos do SIGA (Arquivos mensais independentes com substituição por confirmação)
+ * - 3. Planilha do Drive (Remoção da 1ª linha, filtro por datas e remoção de linhas vazias)
+ * 
+ * Assistente de Etapas (Wizard Stepper de 5 Passos):
+ * ① Relatório ➔ ② SIGA (N arquivos) ➔ ③ Drive ➔ ④ Processamento ➔ ⑤ Resultado
  * ============================================================================
  */
 
@@ -41,6 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Wizard Stepper (5 Etapas)
     const stepItemReport = document.getElementById('stepItemReport');
     const stepItemSiga = document.getElementById('stepItemSiga');
+    const stepTitleSiga = document.getElementById('stepTitleSiga');
     const stepItemDrive = document.getElementById('stepItemDrive');
     const stepItemProcess = document.getElementById('stepItemProcess');
     const stepItemResult = document.getElementById('stepItemResult');
@@ -52,11 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const connector2 = document.getElementById('connector2');
     const connector3 = document.getElementById('connector3');
 
-    // Sessão & Alternador de 3 Planilhas
+    // Gerenciador SIGA
+    const sigaManagerContainer = document.getElementById('sigaManagerContainer');
+    const sigaManagerList = document.getElementById('sigaManagerList');
+    const sigaCollectionCount = document.getElementById('sigaCollectionCount');
+    const sigaAdvanceBar = document.getElementById('sigaAdvanceBar');
+    const btnAdvanceToDrive = document.getElementById('btnAdvanceToDrive');
+
+    // Sessão & Alternador de Planilhas
     const sessionSheetSelector = document.getElementById('sessionSheetSelector');
-    const btnViewReportSheet = document.getElementById('btnViewReportSheet');
-    const btnViewSigaSheet = document.getElementById('btnViewSigaSheet');
-    const btnViewDriveSheet = document.getElementById('btnViewDriveSheet');
+    const selectorBtnGroup = document.getElementById('selectorBtnGroup');
 
     // Abas de Navegação
     const viewTabsBar = document.getElementById('viewTabsBar');
@@ -73,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Elementos do Resumo Financeiro
     const summaryContainer = document.getElementById('summaryContainer');
+    const summaryTitle = document.getElementById('summaryTitle');
     const summaryGrid = document.getElementById('summaryGrid');
 
     // Estado Geral da Aplicação
@@ -89,39 +93,37 @@ document.addEventListener('DOMContentLoaded', () => {
         isActive: false,
         unitName: 'Não identificada',
         reportFile: null,
-        sigaFile: null,
+        sigaCollection: [], // Coleção Multiarquivos de arquivos mensais do SIGA
         driveFile: null,
         status: 'Aguardando Relatório',
         reportMatrix: [],
-        sigaMatrix: [],
         driveMatrix: [],
         reportInspector: { steps: [], timelineLogs: [] },
-        sigaInspector: { steps: [], timelineLogs: [] },
         driveInspector: { steps: [], timelineLogs: [] },
-        sigaSummaryData: {},
-        activeViewSheet: 'report'
+        activeViewSheet: 'report', // 'report' | 'drive' | 'siga_[id]'
+        activeSigaId: null
     };
 
     const FinalProcessor = {
         isReady: false,
         reportData: null,
-        sigaData: null,
+        sigaCollectionData: null,
         driveData: null,
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Módulo preparado para cruzamento futuro das 3 fontes de dados.", "color: #059669; font-weight: bold; font-size: 13px;");
-            if (!sessionObj || !sessionObj.reportMatrix.length || !sessionObj.sigaMatrix.length || !sessionObj.driveMatrix.length) {
+            console.log("%c[FinalProcessor] Módulo preparado para receber Relatório, Coleção SIGA e Drive.", "color: #059669; font-weight: bold; font-size: 13px;");
+            if (!sessionObj || !sessionObj.reportMatrix.length || !sessionObj.sigaCollection.length || !sessionObj.driveMatrix.length) {
                 this.isReady = false;
                 return null;
             }
             this.isReady = true;
             this.reportData = sessionObj.reportMatrix;
-            this.sigaData = sessionObj.sigaMatrix;
+            this.sigaCollectionData = sessionObj.sigaCollection;
             this.driveData = sessionObj.driveMatrix;
             return {
                 status: 'Pronto para Processamento Conjunto',
                 reportRows: this.reportData.length,
-                sigaRows: this.sigaData.length,
+                sigaFilesCount: this.sigaCollectionData.length,
                 driveRows: this.driveData.length
             };
         }
@@ -135,10 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
     // ------------------------------------------------------------------------
 
-    /**
-     * ESTRUTURA DE REFERÊNCIA TEMPORAL CENTRALIZADA.
-     * Novembro de 2022 ➔ Índice 2
-     */
     const TEMPORAL_REFERENCE = {
         mes: 11,
         ano: 2022,
@@ -150,7 +148,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cellVal === null || cellVal === undefined) return null;
             const str = String(cellVal).trim();
             
-            // Formato MM/YYYY ou M/YYYY
             let match = str.match(/^(\d{1,2})[\/-](\d{4})$/);
             if (match) {
                 const mes = parseInt(match[1], 10);
@@ -159,7 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     return { mes, ano, str: `${String(mes).padStart(2, '0')}/${ano}` };
                 }
             }
-            // Formato YYYY-MM
             match = str.match(/^(\d{4})[\/-](\d{1,2})$/);
             if (match) {
                 const mes = parseInt(match[2], 10);
@@ -217,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 3. CONFIGURAÇÕES DE TRATAMENTO SIGA
+    // 3. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -235,6 +231,54 @@ document.addEventListener('DOMContentLoaded', () => {
         'SEM_INCP_ESTATUTARIO': 'Benefício a Pessoal Estatutário Municipal',
         'HORA_EXTRA': 'Hora Extra'
     };
+
+    const MONTH_NAMES_PT = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+
+    /**
+     * IDENTIFICAÇÃO AUTOMÁTICA DO MÊS DE UM ARQUIVO DO SIGA
+     */
+    function detectSigaMonth(matrix, fileName) {
+        const cleanName = fileName.toLowerCase();
+        
+        // 1. Procura por nome de mês em português no nome do arquivo
+        for (let i = 0; i < MONTH_NAMES_PT.length; i++) {
+            const mName = MONTH_NAMES_PT[i].toLowerCase();
+            if (cleanName.includes(mName)) {
+                let anoMatch = cleanName.match(/20\d{2}/);
+                let anoStr = anoMatch ? anoMatch[0] : '2026';
+                return `${MONTH_NAMES_PT[i]}/${anoStr}`;
+            }
+        }
+
+        // 2. Procura por padrao numérico no nome do arquivo (ex: 01_2026, 01-2026, SIGA_01)
+        let numMatch = cleanName.match(/(\d{1,2})[\/_-](\d{4})/);
+        if (numMatch) {
+            const mIdx = parseInt(numMatch[1], 10) - 1;
+            if (mIdx >= 0 && mIdx < 12) {
+                return `${MONTH_NAMES_PT[mIdx]}/${numMatch[2]}`;
+            }
+        }
+
+        // 3. Inspeciona células das primeiras 5 linhas buscando formato de data
+        if (matrix && matrix.length > 0) {
+            for (let r = 0; r < Math.min(5, matrix.length); r++) {
+                for (let c = 0; c < matrix[r].length; c++) {
+                    const parsed = TemporalEngine.parseMonthYear(matrix[r][c]);
+                    if (parsed) {
+                        const mIdx = parsed.mes - 1;
+                        return `${MONTH_NAMES_PT[mIdx]}/${parsed.ano}`;
+                    }
+                }
+            }
+        }
+
+        // Fallback genérico para a ordem de importação se não for detectado no nome/conteúdo
+        const fileSeq = appSession.sigaCollection.length + 1;
+        return `Mês ${fileSeq} (${fileName.substring(0, 10)})`;
+    }
 
     function normalizeHeaderName(header) {
         if (header === null || header === undefined) return '';
@@ -416,7 +460,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // EXIBIÇÃO ESPECÍFICA DO DRIVE: ETAPA 2 (Meses no Relatório)
             if (step.extraInfo.reportMonthRange) {
                 const range = step.extraInfo.reportMonthRange;
                 detailsBlock.innerHTML += `
@@ -435,7 +478,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // EXIBIÇÃO ESPECÍFICA DO DRIVE: ETAPA 3 (Tabela de Conversão Temporal)
             if (step.extraInfo.temporalConversionTable) {
                 const convRows = step.extraInfo.temporalConversionTable.map(c => `
                     <tr>
@@ -461,7 +503,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // EXIBIÇÃO ESPECÍFICA DO DRIVE: ETAPA 4 (Filtro por Índices)
             if (step.extraInfo.driveFilterDetails) {
                 const f = step.extraInfo.driveFilterDetails;
                 detailsBlock.innerHTML += `
@@ -476,6 +517,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="step-info-row">
                         <span class="step-info-label">Colunas Removidas:</span>
                         <span class="step-info-value">${f.removedCols.length > 0 ? f.removedCols.join(', ') : 'Nenhuma'} (${f.removedCols.length} colunas)</span>
+                    </div>
+                `;
+            }
+
+            if (step.extraInfo.driveEmptyRowsRemoved !== undefined) {
+                detailsBlock.innerHTML += `
+                    <div class="step-info-row">
+                        <span class="step-info-label">Linhas Vazias Removidas:</span>
+                        <span class="step-info-value">${step.extraInfo.driveEmptyRowsRemoved} linhas eliminadas</span>
                     </div>
                 `;
             }
@@ -942,7 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return categoryTotals;
     }
 
-    function renderFinancialSummaryCards(summaryTotals) {
+    function renderFinancialSummaryCards(summaryTotals, monthTitle = '') {
         summaryGrid.innerHTML = '';
         const categories = Object.keys(summaryTotals);
 
@@ -950,6 +1000,8 @@ document.addEventListener('DOMContentLoaded', () => {
             summaryContainer.classList.add('hidden');
             return;
         }
+
+        summaryTitle.textContent = `Resumo Financeiro (Planilha do SIGA ${monthTitle ? '- ' + monthTitle : ''})`;
 
         const fragment = document.createDocumentFragment();
 
@@ -981,6 +1033,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
+        const sigaCount = appSession.sigaCollection.length;
+        stepTitleSiga.textContent = `② SIGA (${sigaCount} arquivo${sigaCount === 1 ? '' : 's'})`;
+
         if (appState.currentStep === 1) {
             stepItemReport.className = 'wizard-step-item active';
             stepStatusReport.className = 'step-status-badge badge-active';
@@ -1000,6 +1055,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             dropZonePrompt.textContent = 'Arraste e solte a Planilha de Relatório aqui ou';
             btnChooseFileLabel.textContent = 'Escolher Planilha de Relatório';
+            sigaAdvanceBar.classList.add('hidden');
+            sigaManagerContainer.classList.add('hidden');
         } else if (appState.currentStep === 2) {
             stepItemReport.className = 'wizard-step-item completed';
             stepStatusReport.className = 'step-status-badge badge-completed';
@@ -1007,17 +1064,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             stepItemSiga.className = 'wizard-step-item active';
             stepStatusSiga.className = 'step-status-badge badge-active';
-            stepStatusSiga.textContent = 'Passo Atual';
+            stepStatusSiga.textContent = 'Passo Atual (Coleção)';
 
             stepItemDrive.className = 'wizard-step-item disabled';
             stepStatusDrive.className = 'step-status-badge badge-disabled';
-            stepStatusDrive.textContent = 'Aguardando SIGA';
+            stepStatusDrive.textContent = 'Aguardando Conclusão SIGA';
 
             connector1.classList.add('completed');
             connector2.classList.remove('completed');
 
-            dropZonePrompt.textContent = 'Arraste e solte a Planilha do SIGA aqui ou';
-            btnChooseFileLabel.textContent = 'Escolher Planilha do SIGA';
+            dropZonePrompt.textContent = 'Arraste e solte arquivos mensais do SIGA aqui ou';
+            btnChooseFileLabel.textContent = 'Escolher Arquivo do SIGA';
+
+            if (sigaCount > 0) {
+                sigaAdvanceBar.classList.remove('hidden');
+                sigaManagerContainer.classList.remove('hidden');
+                renderSigaManagerList();
+            } else {
+                sigaAdvanceBar.classList.add('hidden');
+                sigaManagerContainer.classList.add('hidden');
+            }
         } else if (appState.currentStep === 3) {
             stepItemReport.className = 'wizard-step-item completed';
             stepStatusReport.className = 'step-status-badge badge-completed';
@@ -1025,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             stepItemSiga.className = 'wizard-step-item completed';
             stepStatusSiga.className = 'step-status-badge badge-completed';
-            stepStatusSiga.textContent = '✔ Concluído';
+            stepStatusSiga.textContent = `✔ Concluído (${sigaCount})`;
 
             stepItemDrive.className = 'wizard-step-item active';
             stepStatusDrive.className = 'step-status-badge badge-active';
@@ -1037,6 +1103,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             dropZonePrompt.textContent = 'Arraste e solte a Planilha do Drive aqui ou';
             btnChooseFileLabel.textContent = 'Escolher Planilha do Drive';
+            sigaAdvanceBar.classList.add('hidden');
+            if (sigaCount > 0) {
+                sigaManagerContainer.classList.remove('hidden');
+                renderSigaManagerList();
+            }
         } else if (appState.currentStep >= 4) {
             stepItemReport.className = 'wizard-step-item completed';
             stepStatusReport.className = 'step-status-badge badge-completed';
@@ -1044,7 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             stepItemSiga.className = 'wizard-step-item completed';
             stepStatusSiga.className = 'step-status-badge badge-completed';
-            stepStatusSiga.textContent = '✔ Concluído';
+            stepStatusSiga.textContent = `✔ Concluído (${sigaCount})`;
 
             stepItemDrive.className = 'wizard-step-item completed';
             stepStatusDrive.className = 'step-status-badge badge-completed';
@@ -1055,6 +1126,11 @@ document.addEventListener('DOMContentLoaded', () => {
             connector3.classList.add('completed');
 
             stepItemProcess.className = 'wizard-step-item active';
+            sigaAdvanceBar.classList.add('hidden');
+            if (sigaCount > 0) {
+                sigaManagerContainer.classList.remove('hidden');
+                renderSigaManagerList();
+            }
         }
     }
 
@@ -1068,16 +1144,92 @@ document.addEventListener('DOMContentLoaded', () => {
         headerUnitTitle.textContent = appSession.unitName;
         headerMetaRow.classList.remove('hidden');
 
+        const sigaCount = appSession.sigaCollection.length;
         metaReportItem.innerHTML = `📄 Relatório: <strong>${appSession.reportFile ? appSession.reportFile.name : 'Não carregado'}</strong>`;
-        metaSigaItem.innerHTML = `📊 SIGA: <strong>${appSession.sigaFile ? appSession.sigaFile.name : 'Não carregado'}</strong>`;
+        metaSigaItem.innerHTML = `📊 SIGA: <strong>${sigaCount} arquivo${sigaCount === 1 ? '' : 's'}</strong>`;
         metaDriveItem.innerHTML = `📁 Drive: <strong>${appSession.driveFile ? appSession.driveFile.name : 'Não carregado'}</strong>`;
         metaStatusBadge.textContent = appSession.status;
 
-        if (appSession.reportMatrix.length > 0 || appSession.sigaMatrix.length > 0 || appSession.driveMatrix.length > 0) {
-            sessionSheetSelector.classList.remove('hidden');
-        } else {
+        updateSessionSheetSelectorUI();
+    }
+
+    function updateSessionSheetSelectorUI() {
+        if (!appSession.isActive) {
             sessionSheetSelector.classList.add('hidden');
+            return;
         }
+
+        selectorBtnGroup.innerHTML = '';
+
+        if (appSession.reportMatrix.length > 0) {
+            const btnRep = document.createElement('button');
+            btnRep.type = 'button';
+            btnRep.className = `btn-sheet-toggle ${appSession.activeViewSheet === 'report' ? 'active' : ''}`;
+            btnRep.textContent = '📄 Planilha de Relatório';
+            btnRep.addEventListener('click', viewReportSheetInTable);
+            selectorBtnGroup.appendChild(btnRep);
+        }
+
+        appSession.sigaCollection.forEach(sigaItem => {
+            const btnSiga = document.createElement('button');
+            btnSiga.type = 'button';
+            btnSiga.className = `btn-sheet-toggle ${appSession.activeViewSheet === 'siga_' + sigaItem.id ? 'active' : ''}`;
+            btnSiga.textContent = `📊 SIGA (${sigaItem.monthLabel})`;
+            btnSiga.addEventListener('click', () => viewSigaItemInTable(sigaItem.id));
+            selectorBtnGroup.appendChild(btnSiga);
+        });
+
+        if (appSession.driveMatrix.length > 0) {
+            const btnDrv = document.createElement('button');
+            btnDrv.type = 'button';
+            btnDrv.className = `btn-sheet-toggle ${appSession.activeViewSheet === 'drive' ? 'active' : ''}`;
+            btnDrv.textContent = '📁 Planilha do Drive';
+            btnDrv.addEventListener('click', viewDriveSheetInTable);
+            selectorBtnGroup.appendChild(btnDrv);
+        }
+
+        sessionSheetSelector.classList.remove('hidden');
+    }
+
+    function renderSigaManagerList() {
+        sigaManagerList.innerHTML = '';
+        sigaCollectionCount.textContent = appSession.sigaCollection.length;
+
+        if (appSession.sigaCollection.length === 0) {
+            sigaManagerList.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-muted);">Nenhum arquivo do SIGA importado ainda.</div>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        appSession.sigaCollection.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'siga-item-card';
+
+            const info = document.createElement('div');
+            info.className = 'siga-item-info';
+            info.innerHTML = `
+                <span class="siga-item-month">${item.monthLabel}</span>
+                <span class="siga-item-filename">📄 ${item.fileName} • Importado às ${item.importDate}</span>
+            `;
+
+            const actions = document.createElement('div');
+            actions.className = 'siga-item-actions';
+
+            const btnView = document.createElement('button');
+            btnView.type = 'button';
+            btnView.className = `btn-view-siga-item ${appSession.activeViewSheet === 'siga_' + item.id ? 'active' : ''}`;
+            btnView.textContent = 'Visualizar';
+            btnView.addEventListener('click', () => viewSigaItemInTable(item.id));
+
+            actions.appendChild(btnView);
+            card.appendChild(info);
+            card.appendChild(actions);
+
+            fragment.appendChild(card);
+        });
+
+        sigaManagerList.appendChild(fragment);
     }
 
     /**
@@ -1163,56 +1315,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * ETAPA 2 DO WIZARD: Importar SIGA
+     * ETAPA 2 DO WIZARD: Importar Múltiplos Arquivos do SIGA (Coleção Multiarquivos)
      */
     function processSigaStep(file, rawMatrix) {
         resetInspectorData();
 
+        const monthLabel = detectSigaMonth(rawMatrix, file.name);
+
+        // Verificação de Arquivo Duplicado para o mesmo Mês
+        const existingIdx = appSession.sigaCollection.findIndex(item => item.monthLabel === monthLabel);
+        if (existingIdx !== -1) {
+            const confirmReplace = window.confirm(`O mês "${monthLabel}" já possui uma planilha importada (${appSession.sigaCollection[existingIdx].fileName}).\n\nDeseja substituir o arquivo existente?`);
+            if (!confirmReplace) {
+                addInspectorLog(`⚠️ Importação de "${file.name}" cancelada pelo usuário (substituição recusada).`, false);
+                return;
+            }
+        }
+
         recordStepSnapshot(1, "Planilha original importada", rawMatrix);
-        addInspectorLog("✔ Arquivo do SIGA lido e carregado com sucesso pelo SheetJS.");
+        addInspectorLog(`✔ Arquivo do SIGA (${monthLabel}) lido com sucesso pelo SheetJS.`);
 
         const treated = runTreatmentPipeline('siga', rawMatrix);
-        appSession.sigaMatrix = treated;
-
         const summaryData = calculateFinancialSummary(treated);
-        appSession.sigaSummaryData = summaryData;
-        appSession.sigaFile = file;
-        appSession.status = 'SIGA Carregado';
 
-        appSession.sigaInspector = {
-            steps: [...currentInspectorSteps],
-            timelineLogs: [...currentInspectorTimelineLogs]
+        const itemObj = {
+            id: existingIdx !== -1 ? appSession.sigaCollection[existingIdx].id : 'siga_' + Date.now(),
+            fileName: file.name,
+            monthLabel: monthLabel,
+            importDate: new Date().toLocaleTimeString(),
+            rawMatrix: rawMatrix,
+            treatedMatrix: treated,
+            summaryData: summaryData,
+            status: 'Tratado',
+            inspector: {
+                steps: [...currentInspectorSteps],
+                timelineLogs: [...currentInspectorTimelineLogs]
+            }
         };
 
-        appState.currentStep = 3;
-        appSession.activeViewSheet = 'siga';
+        if (existingIdx !== -1) {
+            appSession.sigaCollection[existingIdx] = itemObj;
+            addInspectorLog(`✔ Planilha do mês "${monthLabel}" substituída com sucesso.`);
+        } else {
+            appSession.sigaCollection.push(itemObj);
+            addInspectorLog(`✔ Planilha do mês "${monthLabel}" adicionada à Coleção do SIGA.`);
+        }
+
+        appSession.status = `SIGA (${appSession.sigaCollection.length} arquivos)`;
+        appSession.activeViewSheet = 'siga_' + itemObj.id;
+        appSession.activeSigaId = itemObj.id;
 
         updateWizardUI();
         updateMinimalHeaderUI();
 
-        btnViewReportSheet.classList.remove('active');
-        btnViewDriveSheet.classList.remove('active');
-        btnViewSigaSheet.classList.add('active');
-
-        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do SIGA)";
-        inspectorSheetSubtitle.textContent = "Acompanhe visualmente o estado exato da planilha do SIGA nas 9 etapas de tratamento.";
-
-        renderFinancialSummaryCards(summaryData);
-        renderSpreadsheetTable(treated);
-        renderInspectorUI();
-
+        viewSigaItemInTable(itemObj.id);
         viewTabsBar.classList.remove('hidden');
     }
 
     /**
-     * ETAPA 3 DO WIZARD: Importar Planilha do Drive com Tratamento Temporal Matemático
-     * Pipeline do Drive:
-     * 1. Snapshot ETAPA 1: Planilha original importada
-     * 2. Remover 1ª linha do topo (matrix.slice(1))
-     * 3. Extrair intervalo de meses do Relatório via TemporalEngine (primeiroMes a ultimoMes)
-     * 4. Converter datas em índices numéricos (Novembro/2022 -> 2)
-     * 5. Filtrar colunas do Drive mantendo Coluna A + colunas compreendidas no intervalo de índices
-     * 6. Atualizar tabela e o Inspector do Drive (4 etapas)
+     * ETAPA 3 DO WIZARD: Importar Planilha do Drive com Tratamento Temporal & Remoção de Linhas Vazias
      */
     function processDriveStep(file, rawMatrix) {
         resetInspectorData();
@@ -1264,7 +1425,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const removedColsLog = [];
 
         for (let colIdx = 0; colIdx < headerRowDrive.length; colIdx++) {
-            // Coluna A (índice 0) é sempre preservada para identificação
             if (colIdx === 0) {
                 keptColIndices.push(colIdx);
                 continue;
@@ -1286,13 +1446,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         treatedDriveMatrix = treatedDriveMatrix.map(row => keptColIndices.map(colIdx => row[colIdx]));
 
-        // ETAPA 4 do Inspector do Drive: Filtro Final de Colunas
-        recordStepSnapshot(4, "Filtro de Colunas por Intervalo de Índices", treatedDriveMatrix, {
+        // 4. Nova Regra: Remoção de Linhas 100% Vazias
+        const initialDriveRowsCount = treatedDriveMatrix.length;
+        treatedDriveMatrix = treatedDriveMatrix.filter(row => {
+            if (!row || row.length === 0) return false;
+            return row.some(cell => !isCellEmpty(cell));
+        });
+        const removedDriveEmptyRowsCount = initialDriveRowsCount - treatedDriveMatrix.length;
+
+        // ETAPA 4 do Inspector do Drive: Filtro Final de Colunas & Remoção de Linhas Vazias
+        recordStepSnapshot(4, "Filtro de Colunas & Remoção de Linhas Vazias", treatedDriveMatrix, {
             driveFilterDetails: {
                 primeiroIndice: primeiroIndice !== null ? primeiroIndice : 'Não determinado',
                 ultimoIndice: ultimoIndice !== null ? ultimoIndice : 'Não determinado',
                 removedCols: removedColsLog
-            }
+            },
+            driveEmptyRowsRemoved: removedDriveEmptyRowsCount
         });
 
         // Logs do Inspector do Drive
@@ -1304,6 +1473,7 @@ document.addEventListener('DOMContentLoaded', () => {
             addInspectorLog("✔ Intervalo determinado automaticamente.");
         }
         addInspectorLog(`✔ Colunas filtradas do Drive (${removedColsLog.length} colunas removidas).`);
+        addInspectorLog(`✔ Linhas vazias removidas (${removedDriveEmptyRowsCount} linhas eliminadas).`);
         addInspectorLog("✔ Visualização do Drive concluída.");
 
         appSession.driveFile = file;
@@ -1323,12 +1493,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateWizardUI();
         updateMinimalHeaderUI();
 
-        btnViewReportSheet.classList.remove('active');
-        btnViewSigaSheet.classList.remove('active');
-        btnViewDriveSheet.classList.add('active');
-
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
-        inspectorSheetSubtitle.textContent = "Acompanhe o filtro matemático de colunas por intervalo de datas no Drive.";
+        inspectorSheetSubtitle.textContent = "Acompanhe o filtro de colunas por datas e a remoção de linhas vazias no Drive.";
 
         summaryContainer.classList.add('hidden');
         renderSpreadsheetTable(treatedDriveMatrix);
@@ -1340,6 +1506,56 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
     // 8. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
+
+    function viewReportSheetInTable() {
+        appSession.activeViewSheet = 'report';
+        currentInspectorSteps = appSession.reportInspector.steps;
+        currentInspectorTimelineLogs = appSession.reportInspector.timelineLogs;
+
+        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha de Relatório)";
+        inspectorSheetSubtitle.textContent = "Visualização do relatório tratado (6 linhas do topo e colunas vazias removidas).";
+
+        summaryContainer.classList.add('hidden');
+        renderSpreadsheetTable(appSession.reportMatrix);
+        renderInspectorUI();
+        updateMinimalHeaderUI();
+        renderSigaManagerList();
+    }
+
+    function viewSigaItemInTable(sigaId) {
+        const item = appSession.sigaCollection.find(i => i.id === sigaId);
+        if (!item) return;
+
+        appSession.activeViewSheet = 'siga_' + item.id;
+        appSession.activeSigaId = item.id;
+
+        currentInspectorSteps = item.inspector.steps;
+        currentInspectorTimelineLogs = item.inspector.timelineLogs;
+
+        inspectorSheetTitle.textContent = `🔍 Inspector do Pipeline (Planilha do SIGA - ${item.monthLabel})`;
+        inspectorSheetSubtitle.textContent = `Visualização tratada do arquivo ${item.fileName} (${item.monthLabel}).`;
+
+        renderFinancialSummaryCards(item.summaryData, item.monthLabel);
+        renderSpreadsheetTable(item.treatedMatrix);
+        renderInspectorUI();
+        updateMinimalHeaderUI();
+        renderSigaManagerList();
+    }
+
+    function viewDriveSheetInTable() {
+        appSession.activeViewSheet = 'drive';
+        currentInspectorSteps = appSession.driveInspector.steps;
+        currentInspectorTimelineLogs = appSession.driveInspector.timelineLogs;
+
+        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
+        inspectorSheetSubtitle.textContent = "Acompanhe o filtro de colunas por datas e a remoção de linhas vazias no Drive.";
+
+        summaryContainer.classList.add('hidden');
+        renderSpreadsheetTable(appSession.driveMatrix);
+        renderInspectorUI();
+        updateMinimalHeaderUI();
+        renderSigaManagerList();
+    }
 
     function initTabNavigation() {
         btnTabViewer.addEventListener('click', () => {
@@ -1357,62 +1573,20 @@ document.addEventListener('DOMContentLoaded', () => {
             inspectorTabContent.classList.remove('hidden');
             viewerTabContent.classList.add('hidden');
         });
-
-        btnViewReportSheet.addEventListener('click', () => {
-            btnViewReportSheet.classList.add('active');
-            btnViewSigaSheet.classList.remove('active');
-            btnViewDriveSheet.classList.remove('active');
-            appSession.activeViewSheet = 'report';
-
-            currentInspectorSteps = appSession.reportInspector.steps;
-            currentInspectorTimelineLogs = appSession.reportInspector.timelineLogs;
-
-            inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha de Relatório)";
-            inspectorSheetSubtitle.textContent = "Visualização do relatório tratado (6 linhas do topo e colunas vazias removidas).";
-
-            summaryContainer.classList.add('hidden');
-            renderSpreadsheetTable(appSession.reportMatrix);
-            renderInspectorUI();
-        });
-
-        btnViewSigaSheet.addEventListener('click', () => {
-            btnViewSigaSheet.classList.add('active');
-            btnViewReportSheet.classList.remove('active');
-            btnViewDriveSheet.classList.remove('active');
-            appSession.activeViewSheet = 'siga';
-
-            currentInspectorSteps = appSession.sigaInspector.steps;
-            currentInspectorTimelineLogs = appSession.sigaInspector.timelineLogs;
-
-            inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do SIGA)";
-            inspectorSheetSubtitle.textContent = "Acompanhe visualmente o estado exato da planilha do SIGA nas 9 etapas de tratamento.";
-
-            renderFinancialSummaryCards(appSession.sigaSummaryData);
-            renderSpreadsheetTable(appSession.sigaMatrix);
-            renderInspectorUI();
-        });
-
-        btnViewDriveSheet.addEventListener('click', () => {
-            btnViewDriveSheet.classList.add('active');
-            btnViewReportSheet.classList.remove('active');
-            btnViewSigaSheet.classList.remove('active');
-            appSession.activeViewSheet = 'drive';
-
-            currentInspectorSteps = appSession.driveInspector.steps;
-            currentInspectorTimelineLogs = appSession.driveInspector.timelineLogs;
-
-            inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
-            inspectorSheetSubtitle.textContent = "Acompanhe o filtro matemático de colunas por intervalo de datas no Drive.";
-
-            summaryContainer.classList.add('hidden');
-            renderSpreadsheetTable(appSession.driveMatrix);
-            renderInspectorUI();
-        });
     }
 
     function initEvents() {
         fileInput.addEventListener('change', handleFileSelect);
         btnRemoveFile.addEventListener('click', resetView);
+
+        btnAdvanceToDrive.addEventListener('click', () => {
+            if (appSession.sigaCollection.length === 0) {
+                alert('Importe ao menos uma Planilha do SIGA para avançar.');
+                return;
+            }
+            appState.currentStep = 3;
+            updateWizardUI();
+        });
 
         dropZone.addEventListener('dragover', handleDragOver);
         dropZone.addEventListener('dragleave', handleDragLeave);
@@ -1473,13 +1647,11 @@ document.addEventListener('DOMContentLoaded', () => {
         appSession.isActive = false;
         appSession.unitName = 'Não identificada';
         appSession.reportFile = null;
-        appSession.sigaFile = null;
+        appSession.sigaCollection = [];
         appSession.driveFile = null;
         appSession.status = 'Aguardando Relatório';
         appSession.reportMatrix = [];
-        appSession.sigaMatrix = [];
         appSession.driveMatrix = [];
-        appSession.sigaSummaryData = {};
 
         resetInspectorData();
 
@@ -1488,6 +1660,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryGrid.innerHTML = '';
         inspectorStepsContainer.innerHTML = '';
         inspectorLogTimeline.innerHTML = '';
+        sigaManagerList.innerHTML = '';
 
         updateWizardUI();
         updateMinimalHeaderUI();
@@ -1495,6 +1668,8 @@ document.addEventListener('DOMContentLoaded', () => {
         viewTabsBar.classList.add('hidden');
         summaryContainer.classList.add('hidden');
         tableWrapper.classList.add('hidden');
+        sigaManagerContainer.classList.add('hidden');
+        sigaAdvanceBar.classList.add('hidden');
 
         appState.activeTab = 'viewer';
         btnTabViewer.classList.add('active');

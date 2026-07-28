@@ -28,7 +28,7 @@
             <div class="header-meta-row hidden" id="headerMetaRow">
                 <span class="meta-item" id="metaReportItem">📄 Relatório: <strong>Não carregado</strong></span>
                 <span class="meta-divider">•</span>
-                <span class="meta-item" id="metaSigaItem">📊 SIGA: <strong>Não carregado</strong></span>
+                <span class="meta-item" id="metaSigaItem">📊 SIGA: <strong>0 arquivos</strong></span>
                 <span class="meta-divider">•</span>
                 <span class="meta-item" id="metaDriveItem">📁 Drive: <strong>Não carregado</strong></span>
                 <span class="meta-divider">•</span>
@@ -49,11 +49,11 @@
                 </div>
                 <div class="step-connector" id="connector1"></div>
 
-                <!-- ETAPA 2: SIGA -->
+                <!-- ETAPA 2: SIGA (Coleção Multiarquivos) -->
                 <div class="wizard-step-item disabled" id="stepItemSiga">
                     <div class="step-circle">2</div>
                     <div class="step-label-wrapper">
-                        <span class="step-title">② SIGA</span>
+                        <span class="step-title" id="stepTitleSiga">② SIGA (0 arquivos)</span>
                         <span class="step-status-badge badge-pending" id="stepStatusSiga">Aguardando Relatório</span>
                     </div>
                 </div>
@@ -107,12 +107,28 @@
                 </div>
             </div>
 
-            <!-- Alternador de 3 Planilhas na Tabela -->
+            <!-- Botão de Avanço Manual do Passo 2 (SIGA) para o Passo 3 (Drive) -->
+            <div class="siga-advance-bar hidden" id="sigaAdvanceBar">
+                <button type="button" class="btn-primary btn-advance" id="btnAdvanceToDrive">
+                    Concluir Etapa SIGA e Avançar para Planilha do Drive ➔
+                </button>
+            </div>
+
+            <!-- Gerenciador de Arquivos Mensais da Coleção do SIGA -->
+            <div class="siga-manager-container hidden" id="sigaManagerContainer">
+                <div class="siga-manager-header">
+                    <h3 class="siga-manager-title">📁 Coleção de Arquivos do SIGA (<span id="sigaCollectionCount">0</span>)</h3>
+                    <span class="siga-manager-sub">Importe novos arquivos mensais acima a qualquer momento.</span>
+                </div>
+                <div class="siga-manager-list" id="sigaManagerList"></div>
+            </div>
+
+            <!-- Alternador de Planilhas na Tabela -->
             <div class="session-sheet-selector hidden" id="sessionSheetSelector">
                 <span class="selector-label">Exibir na Tabela / Inspector:</span>
-                <div class="selector-btn-group">
+                <div class="selector-btn-group" id="selectorBtnGroup">
                     <button type="button" class="btn-sheet-toggle active" id="btnViewReportSheet">📄 Planilha de Relatório</button>
-                    <button type="button" class="btn-sheet-toggle" id="btnViewSigaSheet">📊 Planilha do SIGA</button>
+                    <button type="button" class="btn-sheet-toggle" id="btnViewSigaSheet">📊 Planilhas do SIGA</button>
                     <button type="button" class="btn-sheet-toggle" id="btnViewDriveSheet">📁 Planilha do Drive</button>
                 </div>
                 <button type="button" class="btn-secondary" id="btnRemoveFile" title="Reiniciar Sessão">
@@ -153,7 +169,7 @@
                         <svg class="summary-header-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <h3 class="summary-title">Resumo Financeiro (Planilha do SIGA)</h3>
+                        <h3 class="summary-title" id="summaryTitle">Resumo Financeiro (Planilha do SIGA)</h3>
                     </div>
                     <div class="summary-grid" id="summaryGrid"></div>
                 </div>

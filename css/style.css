@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Importador de Planilhas (Design Minimalista & Pipeline de Relatório Ampliado)
+   Importador de Planilhas (Coleção Multiarquivos SIGA & Módulo Temporal)
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -128,6 +128,7 @@ body {
     border-top: 1px solid var(--border-color);
     padding-top: 0.5rem;
     margin-top: 0.25rem;
+    flex-wrap: wrap;
 }
 
 .meta-item strong {
@@ -149,7 +150,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   3. Assistente de Etapas (Wizard Stepper - 4 Etapas)
+   3. Assistente de Etapas (Wizard Stepper - 5 Etapas)
    -------------------------------------------------------------------------- */
 .wizard-section {
     background-color: var(--bg-card);
@@ -163,15 +164,17 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    overflow-x: auto;
 }
 
 .wizard-step-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
     flex: 1;
-    padding: 0.5rem 0.75rem;
+    min-width: 140px;
+    padding: 0.45rem 0.65rem;
     border-radius: var(--radius-md);
     background-color: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -195,13 +198,13 @@ body {
 }
 
 .step-circle {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background-color: var(--border-dark);
     color: var(--text-secondary);
     font-weight: 700;
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -224,13 +227,14 @@ body {
 }
 
 .step-title {
-    font-size: 0.875rem;
+    font-size: 0.825rem;
     font-weight: 700;
     color: var(--text-primary);
+    white-space: nowrap;
 }
 
 .step-status-badge {
-    font-size: 0.725rem;
+    font-size: 0.7rem;
     font-weight: 600;
     color: var(--text-muted);
 }
@@ -254,7 +258,7 @@ body {
 .step-connector {
     height: 2px;
     background-color: var(--border-color);
-    width: 24px;
+    width: 16px;
     flex-shrink: 0;
 }
 
@@ -263,7 +267,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   4. Seção de Upload & Seleção da Sessão
+   4. Seção de Upload & Gerenciador de Coleção do SIGA
    -------------------------------------------------------------------------- */
 .upload-section {
     display: flex;
@@ -274,7 +278,7 @@ body {
 
 .drop-zone {
     width: 100%;
-    max-width: 620px;
+    max-width: 680px;
     background-color: var(--bg-card);
     border: 2px dashed var(--border-dark);
     border-radius: var(--radius-md);
@@ -339,6 +343,110 @@ body {
     background-color: var(--accent-hover);
 }
 
+.btn-advance {
+    background-color: #059669;
+    box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
+}
+
+.btn-advance:hover {
+    background-color: #047857;
+}
+
+.siga-advance-bar {
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    justify-content: center;
+}
+
+.siga-manager-container {
+    width: 100%;
+    max-width: 680px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.siga-manager-header {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.siga-manager-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.siga-manager-sub {
+    font-size: 0.775rem;
+    color: var(--text-secondary);
+}
+
+.siga-manager-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.siga-item-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.85rem;
+    gap: 0.75rem;
+}
+
+.siga-item-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.siga-item-month {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--accent-color);
+}
+
+.siga-item-filename {
+    font-size: 0.775rem;
+    color: var(--text-secondary);
+}
+
+.siga-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-view-siga-item {
+    background-color: var(--accent-light);
+    color: var(--accent-color);
+    border: 1px solid var(--accent-border);
+    font-size: 0.775rem;
+    font-weight: 700;
+    padding: 0.3rem 0.65rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-view-siga-item:hover,
+.btn-view-siga-item.active {
+    background-color: var(--accent-color);
+    color: #ffffff;
+}
+
 .btn-secondary {
     background-color: var(--danger-light);
     color: var(--danger-color);
@@ -358,7 +466,7 @@ body {
 
 .session-sheet-selector {
     width: 100%;
-    max-width: 620px;
+    max-width: 680px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -367,6 +475,8 @@ body {
     padding: 0.625rem 1rem;
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-sm);
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .selector-label {
@@ -379,6 +489,7 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
 .btn-sheet-toggle {
