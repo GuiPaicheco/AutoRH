@@ -79,6 +79,63 @@
         </main>
     </div>
 
+    <!-- Modal de Seleção do Tipo de Planilha -->
+    <div class="modal-backdrop hidden" id="typeSelectionModal">
+        <div class="modal-card">
+            <button type="button" class="modal-close-btn" id="modalCloseBtn" title="Cancelar">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            
+            <div class="modal-header">
+                <div class="modal-icon-wrapper">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 2v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </div>
+                <h2 class="modal-title">Qual o tipo desta planilha?</h2>
+                <p class="modal-subtitle">Selecione o fluxo de tratamento adequado para este arquivo.</p>
+            </div>
+
+            <div class="modal-body">
+                <!-- Opção 1: Planilha de Relatório -->
+                <button type="button" class="type-option-card" id="btnOptionRelatorio">
+                    <div class="option-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                    </div>
+                    <div class="option-info">
+                        <span class="option-title">Planilha de Relatório</span>
+                        <span class="option-desc">Fluxo geral para relatórios operacionais.</span>
+                    </div>
+                </button>
+
+                <!-- Opção 2: Planilha do SIGA -->
+                <button type="button" class="type-option-card" id="btnOptionSiga">
+                    <div class="option-icon option-icon-siga">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                    </div>
+                    <div class="option-info">
+                        <span class="option-title">Planilha do SIGA</span>
+                        <span class="option-desc">Aplica regras automáticas de limpeza do SIGA.</span>
+                    </div>
+                </button>
+            </div>
+
+            <!-- Toast/Mensagem de Fluxo Não Implementado -->
+            <div class="modal-alert hidden" id="modalAlert">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span id="modalAlertText">Este fluxo será implementado em uma versão futura.</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts da Aplicação -->
     <script src="js/app.js"></script>
 </body>
