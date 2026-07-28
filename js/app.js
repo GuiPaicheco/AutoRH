@@ -1,15 +1,17 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Arquitetura 3 Fontes & Wizard 5 Etapas)
+ * Importador de Planilhas - app.js (Módulo Temporal & Filtro do Drive)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) com suporte a 3 fontes
- * de dados independentes:
- * - 1. Planilha de Relatório (Leitura A2 Unidade, remoção de 6 linhas e colunas vazias)
- * - 2. Planilha do SIGA (Tratamento de 5 passos + resumo financeiro BRL)
- * - 3. Planilha do Drive (Visualização fiel sem transformações nesta versão)
+ * Aplicação estática em JavaScript Puro (Vanilla JS) com arquitetura temporal
+ * matemática centralizada baseada em datas.
  * 
- * Assistente de Etapas (Wizard Stepper de 5 Passos):
- * ① Relatório ➔ ② SIGA ➔ ③ Drive ➔ ④ Processamento ➔ ⑤ Resultado
+ * Referência Temporal Centralizada:
+ * Novembro / 2022 ➔ Índice 2
+ * 
+ * Módulos de Tratamento:
+ * - 1. Planilha de Relatório (A2 Unidade, remoção de 6 linhas e colunas vazias)
+ * - 2. Planilha do SIGA (Tratamento de 5 passos + resumo financeiro BRL)
+ * - 3. Planilha do Drive (Remoção da 1ª linha e filtro matemático de colunas por datas)
  * ============================================================================
  */
 
@@ -75,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Estado Geral da Aplicação
     const appState = {
-        currentStep: 1, // 1: Relatório | 2: SIGA | 3: Drive | 4: Processamento | 5: Resultado
+        currentStep: 1,
         activeTab: 'viewer'
     };
 
@@ -89,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reportFile: null,
         sigaFile: null,
         driveFile: null,
-        status: 'Aguardando Relatório', // 'Aguardando Relatório' | 'Relatório Carregado' | 'SIGA Carregado' | 'Drive Carregado' | 'Pronto para Processamento'
+        status: 'Aguardando Relatório',
         reportMatrix: [],
         sigaMatrix: [],
         driveMatrix: [],
@@ -100,10 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
         activeViewSheet: 'report'
     };
 
-    /**
-     * MÓDULO STUB: PROCESSADOR FINAL (FinalProcessor)
-     * Preparado para receber futuramente 3 conjuntos de dados tratados.
-     */
     const FinalProcessor = {
         isReady: false,
         reportData: null,
@@ -134,7 +132,92 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentInspectorTimelineLogs = [];
 
     // ------------------------------------------------------------------------
-    // 2. CONFIGURAÇÕES CENTRALIZADAS DE TRATAMENTO
+    // 2. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
+    // ------------------------------------------------------------------------
+
+    /**
+     * ESTRUTURA DE REFERÊNCIA TEMPORAL CENTRALIZADA.
+     * Novembro de 2022 ➔ Índice 2
+     */
+    const TEMPORAL_REFERENCE = {
+        mes: 11,
+        ano: 2022,
+        indice: 2
+    };
+
+    const TemporalEngine = {
+        parseMonthYear(cellVal) {
+            if (cellVal === null || cellVal === undefined) return null;
+            const str = String(cellVal).trim();
+            
+            // Formato MM/YYYY ou M/YYYY
+            let match = str.match(/^(\d{1,2})[\/-](\d{4})$/);
+            if (match) {
+                const mes = parseInt(match[1], 10);
+                const ano = parseInt(match[2], 10);
+                if (mes >= 1 && mes <= 12) {
+                    return { mes, ano, str: `${String(mes).padStart(2, '0')}/${ano}` };
+                }
+            }
+            // Formato YYYY-MM
+            match = str.match(/^(\d{4})[\/-](\d{1,2})$/);
+            if (match) {
+                const mes = parseInt(match[2], 10);
+                const ano = parseInt(match[1], 10);
+                if (mes >= 1 && mes <= 12) {
+                    return { mes, ano, str: `${String(mes).padStart(2, '0')}/${ano}` };
+                }
+            }
+            return null;
+        },
+
+        converterMesParaIndice(mes, ano) {
+            const diffMeses = (ano - TEMPORAL_REFERENCE.ano) * 12 + (mes - TEMPORAL_REFERENCE.mes);
+            return TEMPORAL_REFERENCE.indice + diffMeses;
+        },
+
+        converterIndiceParaMes(indice) {
+            const diffMeses = indice - TEMPORAL_REFERENCE.indice;
+            const totalMeses = (TEMPORAL_REFERENCE.ano * 12 + TEMPORAL_REFERENCE.mes - 1) + diffMeses;
+            const ano = Math.floor(totalMeses / 12);
+            const mes = (totalMeses % 12) + 1;
+            return { mes, ano, str: `${String(mes).padStart(2, '0')}/${ano}` };
+        },
+
+        extractMonthRangeFromReport(reportMatrix) {
+            if (!reportMatrix || reportMatrix.length === 0) return null;
+            const headerRow = reportMatrix[0] || [];
+            const foundMonths = [];
+
+            for (let colIdx = 1; colIdx < headerRow.length; colIdx++) {
+                const parsed = this.parseMonthYear(headerRow[colIdx]);
+                if (parsed) {
+                    const calculatedIndex = this.converterMesParaIndice(parsed.mes, parsed.ano);
+                    const diffFromRef = (parsed.ano - TEMPORAL_REFERENCE.ano) * 12 + (parsed.mes - TEMPORAL_REFERENCE.mes);
+                    foundMonths.push({
+                        colIndex: colIdx,
+                        colLetter: getExcelColumnName(colIdx),
+                        mes: parsed.mes,
+                        ano: parsed.ano,
+                        str: parsed.str,
+                        diffFromRef,
+                        calculatedIndex
+                    });
+                }
+            }
+
+            if (foundMonths.length === 0) return null;
+
+            return {
+                primeiroMes: foundMonths[0],
+                ultimoMes: foundMonths[foundMonths.length - 1],
+                listaMeses: foundMonths
+            };
+        }
+    };
+
+    // ------------------------------------------------------------------------
+    // 3. CONFIGURAÇÕES DE TRATAMENTO SIGA
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -215,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 3. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 4. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -329,6 +412,70 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="step-info-row">
                         <span class="step-info-label">Tipo do Arquivo:</span>
                         <span class="step-info-value">${step.extraInfo.fileType || '-'}</span>
+                    </div>
+                `;
+            }
+
+            // EXIBIÇÃO ESPECÍFICA DO DRIVE: ETAPA 2 (Meses no Relatório)
+            if (step.extraInfo.reportMonthRange) {
+                const range = step.extraInfo.reportMonthRange;
+                detailsBlock.innerHTML += `
+                    <div class="step-info-row">
+                        <span class="step-info-label">Primeiro Mês do Relatório:</span>
+                        <span class="step-info-value">${range.primeiroMes ? range.primeiroMes.str : '-'}</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Último Mês do Relatório:</span>
+                        <span class="step-info-value">${range.ultimoMes ? range.ultimoMes.str : '-'}</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Meses Encontrados:</span>
+                        <span class="step-info-value">${range.listaMeses ? range.listaMeses.map(m => m.str).join(', ') : '-'}</span>
+                    </div>
+                `;
+            }
+
+            // EXIBIÇÃO ESPECÍFICA DO DRIVE: ETAPA 3 (Tabela de Conversão Temporal)
+            if (step.extraInfo.temporalConversionTable) {
+                const convRows = step.extraInfo.temporalConversionTable.map(c => `
+                    <tr>
+                        <td><b>${c.str}</b></td>
+                        <td>${c.diffFromRef} meses pós-referência</td>
+                        <td><code>Índice ${c.calculatedIndex}</code></td>
+                    </tr>
+                `).join('');
+                detailsBlock.innerHTML += `
+                    <div style="margin-top: 0.5rem; overflow-x: auto;">
+                        <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-primary);">Conversão Matemática Temporal (Referência: Novembro/2022 ➔ 2):</h4>
+                        <table class="match-table">
+                            <thead>
+                                <tr>
+                                    <th>Mês / Ano</th>
+                                    <th>Diferença de Meses</th>
+                                    <th>Índice Calculado</th>
+                                </tr>
+                            </thead>
+                            <tbody>${convRows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            // EXIBIÇÃO ESPECÍFICA DO DRIVE: ETAPA 4 (Filtro por Índices)
+            if (step.extraInfo.driveFilterDetails) {
+                const f = step.extraInfo.driveFilterDetails;
+                detailsBlock.innerHTML += `
+                    <div class="step-info-row">
+                        <span class="step-info-label">Primeiro Índice Mantido:</span>
+                        <span class="step-info-value">${f.primeiroIndice}</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Último Índice Mantido:</span>
+                        <span class="step-info-value">${f.ultimoIndice}</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Colunas Removidas:</span>
+                        <span class="step-info-value">${f.removedCols.length > 0 ? f.removedCols.join(', ') : 'Nenhuma'} (${f.removedCols.length} colunas)</span>
                     </div>
                 `;
             }
@@ -499,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 5. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -722,7 +869,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 5. MÓDULO DO RESUMO FINANCEIRO (SIGA)
+    // 6. MÓDULO DO RESUMO FINANCEIRO (SIGA)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -830,7 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO UNIFICADA
+    // 7. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -1058,26 +1205,110 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * ETAPA 3 DO WIZARD: Importar Planilha do Drive (Nova Fonte de Dados)
+     * ETAPA 3 DO WIZARD: Importar Planilha do Drive com Tratamento Temporal Matemático
+     * Pipeline do Drive:
+     * 1. Snapshot ETAPA 1: Planilha original importada
+     * 2. Remover 1ª linha do topo (matrix.slice(1))
+     * 3. Extrair intervalo de meses do Relatório via TemporalEngine (primeiroMes a ultimoMes)
+     * 4. Converter datas em índices numéricos (Novembro/2022 -> 2)
+     * 5. Filtrar colunas do Drive mantendo Coluna A + colunas compreendidas no intervalo de índices
+     * 6. Atualizar tabela e o Inspector do Drive (4 etapas)
      */
     function processDriveStep(file, rawMatrix) {
         resetInspectorData();
 
-        appSession.driveFile = file;
-        appSession.driveMatrix = rawMatrix;
-        appSession.status = 'Pronto para Processamento';
-
         const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
 
+        // ETAPA 1: Original Importada
         recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
             fileName: file.name,
             fileType: fileExt
         });
 
-        addInspectorLog("✔ Arquivo importado.");
-        addInspectorLog("✔ Pipeline da Planilha do Drive iniciado.");
-        addInspectorLog("✔ Nenhuma transformação aplicada.");
-        addInspectorLog("✔ Visualização concluída.");
+        // 1. Remover 1ª linha do topo da matriz do Drive
+        let treatedDriveMatrix = rawMatrix.length > 1 ? rawMatrix.slice(1) : [];
+
+        // 2. Extrair meses do Relatório via TemporalEngine
+        const reportMonthRange = TemporalEngine.extractMonthRangeFromReport(appSession.reportMatrix);
+
+        let primeiroIndice = null;
+        let ultimoIndice = null;
+        const temporalConversionTable = [];
+
+        if (reportMonthRange) {
+            primeiroIndice = reportMonthRange.primeiroMes.calculatedIndex;
+            ultimoIndice = reportMonthRange.ultimoMes.calculatedIndex;
+
+            reportMonthRange.listaMeses.forEach(m => {
+                temporalConversionTable.push({
+                    str: m.str,
+                    diffFromRef: m.diffFromRef,
+                    calculatedIndex: m.calculatedIndex
+                });
+            });
+
+            // ETAPA 2 do Inspector do Drive: Meses encontrados no Relatório
+            recordStepSnapshot(2, "Meses encontrados na Planilha de Relatório", treatedDriveMatrix, {
+                reportMonthRange
+            });
+
+            // ETAPA 3 do Inspector do Drive: Conversão Matemática Temporal
+            recordStepSnapshot(3, "Conversão Matemática Temporal", treatedDriveMatrix, {
+                temporalConversionTable
+            });
+        }
+
+        // 3. Filtrar colunas do Drive por intervalo [primeiroIndice, ultimoIndice]
+        const headerRowDrive = treatedDriveMatrix[0] || [];
+        const keptColIndices = [];
+        const removedColsLog = [];
+
+        for (let colIdx = 0; colIdx < headerRowDrive.length; colIdx++) {
+            // Coluna A (índice 0) é sempre preservada para identificação
+            if (colIdx === 0) {
+                keptColIndices.push(colIdx);
+                continue;
+            }
+
+            const cellVal = headerRowDrive[colIdx];
+            const numVal = parseNumericValue(cellVal);
+
+            if (primeiroIndice !== null && ultimoIndice !== null) {
+                if (numVal >= primeiroIndice && numVal <= ultimoIndice) {
+                    keptColIndices.push(colIdx);
+                } else {
+                    removedColsLog.push(`Coluna ${getExcelColumnName(colIdx)} (ID: ${cellVal || colIdx})`);
+                }
+            } else {
+                keptColIndices.push(colIdx);
+            }
+        }
+
+        treatedDriveMatrix = treatedDriveMatrix.map(row => keptColIndices.map(colIdx => row[colIdx]));
+
+        // ETAPA 4 do Inspector do Drive: Filtro Final de Colunas
+        recordStepSnapshot(4, "Filtro de Colunas por Intervalo de Índices", treatedDriveMatrix, {
+            driveFilterDetails: {
+                primeiroIndice: primeiroIndice !== null ? primeiroIndice : 'Não determinado',
+                ultimoIndice: ultimoIndice !== null ? ultimoIndice : 'Não determinado',
+                removedCols: removedColsLog
+            }
+        });
+
+        // Logs do Inspector do Drive
+        addInspectorLog("✔ Arquivo do Drive importado.");
+        addInspectorLog("✔ 1ª linha do topo removida do Drive.");
+        if (reportMonthRange) {
+            addInspectorLog(`✔ Meses identificados no Relatório (${reportMonthRange.primeiroMes.str} a ${reportMonthRange.ultimoMes.str}).`);
+            addInspectorLog(`✔ Índices calculados (${primeiroIndice} a ${ultimoIndice}).`);
+            addInspectorLog("✔ Intervalo determinado automaticamente.");
+        }
+        addInspectorLog(`✔ Colunas filtradas do Drive (${removedColsLog.length} colunas removidas).`);
+        addInspectorLog("✔ Visualização do Drive concluída.");
+
+        appSession.driveFile = file;
+        appSession.driveMatrix = treatedDriveMatrix;
+        appSession.status = 'Pronto para Processamento';
 
         appSession.driveInspector = {
             steps: [...currentInspectorSteps],
@@ -1097,17 +1328,17 @@ document.addEventListener('DOMContentLoaded', () => {
         btnViewDriveSheet.classList.add('active');
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
-        inspectorSheetSubtitle.textContent = "Visualização fiel do arquivo do Drive importado.";
+        inspectorSheetSubtitle.textContent = "Acompanhe o filtro matemático de colunas por intervalo de datas no Drive.";
 
         summaryContainer.classList.add('hidden');
-        renderSpreadsheetTable(rawMatrix);
+        renderSpreadsheetTable(treatedDriveMatrix);
         renderInspectorUI();
 
         viewTabsBar.classList.remove('hidden');
     }
 
     // ------------------------------------------------------------------------
-    // 7. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 8. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function initTabNavigation() {
@@ -1171,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentInspectorTimelineLogs = appSession.driveInspector.timelineLogs;
 
             inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
-            inspectorSheetSubtitle.textContent = "Visualização fiel do arquivo do Drive importado.";
+            inspectorSheetSubtitle.textContent = "Acompanhe o filtro matemático de colunas por intervalo de datas no Drive.";
 
             summaryContainer.classList.add('hidden');
             renderSpreadsheetTable(appSession.driveMatrix);
@@ -1275,7 +1506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 8. LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 9. LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -1315,7 +1546,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 10. RENDERIZAÇÃO DA TABELA (Table Renderer)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
