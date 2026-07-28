@@ -1,21 +1,15 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Design Minimalista & Pipeline de Relatório Ampliado)
+ * Importador de Planilhas - app.js (Arquitetura 3 Fontes & Wizard 5 Etapas)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) com interface minimalista
- * e fluxo em etapas (Wizard 4 Passos).
+ * Aplicação estática em JavaScript Puro (Vanilla JS) com suporte a 3 fontes
+ * de dados independentes:
+ * - 1. Planilha de Relatório (Leitura A2 Unidade, remoção de 6 linhas e colunas vazias)
+ * - 2. Planilha do SIGA (Tratamento de 5 passos + resumo financeiro BRL)
+ * - 3. Planilha do Drive (Visualização fiel sem transformações nesta versão)
  * 
- * Pipeline de Tratamento da Planilha de Relatório:
- * 1. Importar arquivo
- * 2. Ler célula A2 e identificar a Unidade de Saúde
- * 3. Criar a Sessão
- * 4. Remover as 6 primeiras linhas
- * 5. Remover colunas 100% vazias
- * 6. Recalcular letras das colunas (A..Z) e atualizar visualização e Inspector
- * 
- * Pipeline de Tratamento da Planilha do SIGA:
- * - Permanece 100% inalterado (4 linhas topo, colunas vazias, J/I/H/G/A, 2 linhas rodapé,
- *   padronização e resumo financeiro BRL).
+ * Assistente de Etapas (Wizard Stepper de 5 Passos):
+ * ① Relatório ➔ ② SIGA ➔ ③ Drive ➔ ④ Processamento ➔ ⑤ Resultado
  * ============================================================================
  */
 
@@ -39,22 +33,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerMetaRow = document.getElementById('headerMetaRow');
     const metaReportItem = document.getElementById('metaReportItem');
     const metaSigaItem = document.getElementById('metaSigaItem');
+    const metaDriveItem = document.getElementById('metaDriveItem');
     const metaStatusBadge = document.getElementById('metaStatusBadge');
 
-    // Wizard Stepper (4 Etapas)
+    // Wizard Stepper (5 Etapas)
     const stepItemReport = document.getElementById('stepItemReport');
     const stepItemSiga = document.getElementById('stepItemSiga');
+    const stepItemDrive = document.getElementById('stepItemDrive');
     const stepItemProcess = document.getElementById('stepItemProcess');
     const stepItemResult = document.getElementById('stepItemResult');
 
     const stepStatusReport = document.getElementById('stepStatusReport');
     const stepStatusSiga = document.getElementById('stepStatusSiga');
+    const stepStatusDrive = document.getElementById('stepStatusDrive');
     const connector1 = document.getElementById('connector1');
+    const connector2 = document.getElementById('connector2');
+    const connector3 = document.getElementById('connector3');
 
-    // Sessão & Alternador de Planilhas
+    // Sessão & Alternador de 3 Planilhas
     const sessionSheetSelector = document.getElementById('sessionSheetSelector');
     const btnViewReportSheet = document.getElementById('btnViewReportSheet');
     const btnViewSigaSheet = document.getElementById('btnViewSigaSheet');
+    const btnViewDriveSheet = document.getElementById('btnViewDriveSheet');
 
     // Abas de Navegação
     const viewTabsBar = document.getElementById('viewTabsBar');
@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Estado Geral da Aplicação
     const appState = {
-        currentStep: 1, // 1: Relatório | 2: SIGA | 3: Processamento | 4: Resultado
+        currentStep: 1, // 1: Relatório | 2: SIGA | 3: Drive | 4: Processamento | 5: Resultado
         activeTab: 'viewer'
     };
 
@@ -88,36 +88,43 @@ document.addEventListener('DOMContentLoaded', () => {
         unitName: 'Não identificada',
         reportFile: null,
         sigaFile: null,
-        status: 'Aguardando Relatório', // 'Aguardando Relatório' | 'Relatório Carregado' | 'SIGA Carregado' | 'Pronto para Processamento'
+        driveFile: null,
+        status: 'Aguardando Relatório', // 'Aguardando Relatório' | 'Relatório Carregado' | 'SIGA Carregado' | 'Drive Carregado' | 'Pronto para Processamento'
         reportMatrix: [],
         sigaMatrix: [],
+        driveMatrix: [],
         reportInspector: { steps: [], timelineLogs: [] },
         sigaInspector: { steps: [], timelineLogs: [] },
+        driveInspector: { steps: [], timelineLogs: [] },
         sigaSummaryData: {},
         activeViewSheet: 'report'
     };
 
     /**
      * MÓDULO STUB: PROCESSADOR FINAL (FinalProcessor)
+     * Preparado para receber futuramente 3 conjuntos de dados tratados.
      */
     const FinalProcessor = {
         isReady: false,
         reportData: null,
         sigaData: null,
+        driveData: null,
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Módulo preparado para cruzamento futuro das planilhas tratadas.", "color: #059669; font-weight: bold; font-size: 13px;");
-            if (!sessionObj || !sessionObj.reportMatrix.length || !sessionObj.sigaMatrix.length) {
+            console.log("%c[FinalProcessor] Módulo preparado para cruzamento futuro das 3 fontes de dados.", "color: #059669; font-weight: bold; font-size: 13px;");
+            if (!sessionObj || !sessionObj.reportMatrix.length || !sessionObj.sigaMatrix.length || !sessionObj.driveMatrix.length) {
                 this.isReady = false;
                 return null;
             }
             this.isReady = true;
             this.reportData = sessionObj.reportMatrix;
             this.sigaData = sessionObj.sigaMatrix;
+            this.driveData = sessionObj.driveMatrix;
             return {
                 status: 'Pronto para Processamento Conjunto',
                 reportRows: this.reportData.length,
-                sigaRows: this.sigaData.length
+                sigaRows: this.sigaData.length,
+                driveRows: this.driveData.length
             };
         }
     };
@@ -326,7 +333,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // Exibição do Descarte de Colunas Vazias (Relatório ETAPA 2 ou SIGA ETAPA 3)
             if (step.extraInfo.removedEmptyCols) {
                 detailsBlock.innerHTML += `
                     <div class="step-info-row">
@@ -703,7 +709,8 @@ document.addEventListener('DOMContentLoaded', () => {
             (matrix) => inspectAndLogOfficialHeaders(matrix),
             (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)
         ],
-        relatorio: []
+        relatorio: [],
+        drive: []
     };
 
     function runTreatmentPipeline(sheetType, rawMatrix) {
@@ -823,7 +830,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. GERENCIADOR DO WIZARD DE 4 ETAPAS & SESSÃO MINIMALISTA
+    // 6. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO UNIFICADA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -836,7 +843,13 @@ document.addEventListener('DOMContentLoaded', () => {
             stepStatusSiga.className = 'step-status-badge badge-disabled';
             stepStatusSiga.textContent = 'Aguardando Relatório';
 
+            stepItemDrive.className = 'wizard-step-item disabled';
+            stepStatusDrive.className = 'step-status-badge badge-disabled';
+            stepStatusDrive.textContent = 'Aguardando SIGA';
+
             connector1.classList.remove('completed');
+            connector2.classList.remove('completed');
+            connector3.classList.remove('completed');
 
             dropZonePrompt.textContent = 'Arraste e solte a Planilha de Relatório aqui ou';
             btnChooseFileLabel.textContent = 'Escolher Planilha de Relatório';
@@ -849,11 +862,16 @@ document.addEventListener('DOMContentLoaded', () => {
             stepStatusSiga.className = 'step-status-badge badge-active';
             stepStatusSiga.textContent = 'Passo Atual';
 
+            stepItemDrive.className = 'wizard-step-item disabled';
+            stepStatusDrive.className = 'step-status-badge badge-disabled';
+            stepStatusDrive.textContent = 'Aguardando SIGA';
+
             connector1.classList.add('completed');
+            connector2.classList.remove('completed');
 
             dropZonePrompt.textContent = 'Arraste e solte a Planilha do SIGA aqui ou';
             btnChooseFileLabel.textContent = 'Escolher Planilha do SIGA';
-        } else if (appState.currentStep >= 3) {
+        } else if (appState.currentStep === 3) {
             stepItemReport.className = 'wizard-step-item completed';
             stepStatusReport.className = 'step-status-badge badge-completed';
             stepStatusReport.textContent = '✔ Concluído';
@@ -862,14 +880,37 @@ document.addEventListener('DOMContentLoaded', () => {
             stepStatusSiga.className = 'step-status-badge badge-completed';
             stepStatusSiga.textContent = '✔ Concluído';
 
+            stepItemDrive.className = 'wizard-step-item active';
+            stepStatusDrive.className = 'step-status-badge badge-active';
+            stepStatusDrive.textContent = 'Passo Atual';
+
             connector1.classList.add('completed');
+            connector2.classList.add('completed');
+            connector3.classList.remove('completed');
+
+            dropZonePrompt.textContent = 'Arraste e solte a Planilha do Drive aqui ou';
+            btnChooseFileLabel.textContent = 'Escolher Planilha do Drive';
+        } else if (appState.currentStep >= 4) {
+            stepItemReport.className = 'wizard-step-item completed';
+            stepStatusReport.className = 'step-status-badge badge-completed';
+            stepStatusReport.textContent = '✔ Concluído';
+
+            stepItemSiga.className = 'wizard-step-item completed';
+            stepStatusSiga.className = 'step-status-badge badge-completed';
+            stepStatusSiga.textContent = '✔ Concluído';
+
+            stepItemDrive.className = 'wizard-step-item completed';
+            stepStatusDrive.className = 'step-status-badge badge-completed';
+            stepStatusDrive.textContent = '✔ Concluído';
+
+            connector1.classList.add('completed');
+            connector2.classList.add('completed');
+            connector3.classList.add('completed');
+
             stepItemProcess.className = 'wizard-step-item active';
         }
     }
 
-    /**
-     * ATUALIZA O CABEÇALHO MINIMALISTA E METADADOS DA SESSÃO
-     */
     function updateMinimalHeaderUI() {
         if (!appSession.isActive) {
             headerUnitTitle.textContent = 'Selecione a Planilha de Relatório';
@@ -882,9 +923,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         metaReportItem.innerHTML = `📄 Relatório: <strong>${appSession.reportFile ? appSession.reportFile.name : 'Não carregado'}</strong>`;
         metaSigaItem.innerHTML = `📊 SIGA: <strong>${appSession.sigaFile ? appSession.sigaFile.name : 'Não carregado'}</strong>`;
+        metaDriveItem.innerHTML = `📁 Drive: <strong>${appSession.driveFile ? appSession.driveFile.name : 'Não carregado'}</strong>`;
         metaStatusBadge.textContent = appSession.status;
 
-        if (appSession.reportMatrix.length > 0 && appSession.sigaMatrix.length > 0) {
+        if (appSession.reportMatrix.length > 0 || appSession.sigaMatrix.length > 0 || appSession.driveMatrix.length > 0) {
             sessionSheetSelector.classList.remove('hidden');
         } else {
             sessionSheetSelector.classList.add('hidden');
@@ -892,19 +934,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * PROCESSA A ETAPA 1 DO WIZARD: Importar Relatório com Expansão de Pipeline
-     * Pipeline:
-     * 1. Importar arquivo
-     * 2. Ler célula A2 -> Identificar Unidade de Saúde
-     * 3. Criar a sessão
-     * 4. Remover as 6 primeiras linhas (matrix.slice(6))
-     * 5. Remover colunas 100% vazias
-     * 6. Recalcular visualização e Inspector
+     * ETAPA 1 DO WIZARD: Importar Relatório
      */
     function processReportStep(file, rawMatrix) {
         resetInspectorData();
 
-        // 1 & 2. Identifica a Unidade de Saúde na Célula A2 (Linha 2, Coluna A da matriz bruta)
         let extractedUnit = 'Unidade de Saúde';
         if (rawMatrix && rawMatrix.length > 1 && rawMatrix[1][0]) {
             const rawA2 = String(rawMatrix[1][0]).trim();
@@ -913,7 +947,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 3. Inicializa a Sessão Ativa
         appSession.isActive = true;
         appSession.unitName = extractedUnit;
         appSession.reportFile = file;
@@ -921,16 +954,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
 
-        // Snapshot Inicial (Importação)
         recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
             fileName: file.name,
             fileType: fileExt
         });
 
-        // 4. Remover as 6 primeiras linhas
         let treatedMatrix = rawMatrix.length > 6 ? rawMatrix.slice(6) : [];
 
-        // 5. Remover todas as colunas completamente vazias
         let maxCols = 0;
         treatedMatrix.forEach(row => { if (row.length > maxCols) maxCols = row.length; });
 
@@ -956,12 +986,10 @@ document.addEventListener('DOMContentLoaded', () => {
         treatedMatrix = treatedMatrix.map(row => nonArrayColIndices.map(colIdx => row[colIdx]));
         appSession.reportMatrix = treatedMatrix;
 
-        // Snapshot Etapa 2 do Relatório (Tratamento de 6 linhas + colunas vazias)
         recordStepSnapshot(2, "Após remoção de 6 linhas e colunas vazias", treatedMatrix, {
             removedEmptyCols: removedEmptyColsLetters
         });
 
-        // Logs do Inspector
         addInspectorLog("✔ Arquivo do Relatório importado.");
         addInspectorLog(`✔ Unidade de Saúde identificada na célula A2: "${extractedUnit}".`);
         addInspectorLog("✔ 6 primeiras linhas removidas.");
@@ -974,7 +1002,6 @@ document.addEventListener('DOMContentLoaded', () => {
             timelineLogs: [...currentInspectorTimelineLogs]
         };
 
-        // Avança o Wizard para o Passo 2 (SIGA)
         appState.currentStep = 2;
         appSession.activeViewSheet = 'report';
 
@@ -989,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * PROCESSA A ETAPA 2 DO WIZARD: Importar SIGA (Manter 100% inalterado)
+     * ETAPA 2 DO WIZARD: Importar SIGA
      */
     function processSigaStep(file, rawMatrix) {
         resetInspectorData();
@@ -1003,14 +1030,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryData = calculateFinancialSummary(treated);
         appSession.sigaSummaryData = summaryData;
         appSession.sigaFile = file;
-        appSession.status = 'Pronto para Processamento';
+        appSession.status = 'SIGA Carregado';
 
         appSession.sigaInspector = {
             steps: [...currentInspectorSteps],
             timelineLogs: [...currentInspectorTimelineLogs]
         };
-
-        FinalProcessor.process(appSession);
 
         appState.currentStep = 3;
         appSession.activeViewSheet = 'siga';
@@ -1019,6 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateMinimalHeaderUI();
 
         btnViewReportSheet.classList.remove('active');
+        btnViewDriveSheet.classList.remove('active');
         btnViewSigaSheet.classList.add('active');
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do SIGA)";
@@ -1026,6 +1052,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
+        renderInspectorUI();
+
+        viewTabsBar.classList.remove('hidden');
+    }
+
+    /**
+     * ETAPA 3 DO WIZARD: Importar Planilha do Drive (Nova Fonte de Dados)
+     */
+    function processDriveStep(file, rawMatrix) {
+        resetInspectorData();
+
+        appSession.driveFile = file;
+        appSession.driveMatrix = rawMatrix;
+        appSession.status = 'Pronto para Processamento';
+
+        const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
+
+        recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
+            fileName: file.name,
+            fileType: fileExt
+        });
+
+        addInspectorLog("✔ Arquivo importado.");
+        addInspectorLog("✔ Pipeline da Planilha do Drive iniciado.");
+        addInspectorLog("✔ Nenhuma transformação aplicada.");
+        addInspectorLog("✔ Visualização concluída.");
+
+        appSession.driveInspector = {
+            steps: [...currentInspectorSteps],
+            timelineLogs: [...currentInspectorTimelineLogs]
+        };
+
+        FinalProcessor.process(appSession);
+
+        appState.currentStep = 4;
+        appSession.activeViewSheet = 'drive';
+
+        updateWizardUI();
+        updateMinimalHeaderUI();
+
+        btnViewReportSheet.classList.remove('active');
+        btnViewSigaSheet.classList.remove('active');
+        btnViewDriveSheet.classList.add('active');
+
+        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
+        inspectorSheetSubtitle.textContent = "Visualização fiel do arquivo do Drive importado.";
+
+        summaryContainer.classList.add('hidden');
+        renderSpreadsheetTable(rawMatrix);
         renderInspectorUI();
 
         viewTabsBar.classList.remove('hidden');
@@ -1055,6 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnViewReportSheet.addEventListener('click', () => {
             btnViewReportSheet.classList.add('active');
             btnViewSigaSheet.classList.remove('active');
+            btnViewDriveSheet.classList.remove('active');
             appSession.activeViewSheet = 'report';
 
             currentInspectorSteps = appSession.reportInspector.steps;
@@ -1071,6 +1147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnViewSigaSheet.addEventListener('click', () => {
             btnViewSigaSheet.classList.add('active');
             btnViewReportSheet.classList.remove('active');
+            btnViewDriveSheet.classList.remove('active');
             appSession.activeViewSheet = 'siga';
 
             currentInspectorSteps = appSession.sigaInspector.steps;
@@ -1081,6 +1158,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderFinancialSummaryCards(appSession.sigaSummaryData);
             renderSpreadsheetTable(appSession.sigaMatrix);
+            renderInspectorUI();
+        });
+
+        btnViewDriveSheet.addEventListener('click', () => {
+            btnViewDriveSheet.classList.add('active');
+            btnViewReportSheet.classList.remove('active');
+            btnViewSigaSheet.classList.remove('active');
+            appSession.activeViewSheet = 'drive';
+
+            currentInspectorSteps = appSession.driveInspector.steps;
+            currentInspectorTimelineLogs = appSession.driveInspector.timelineLogs;
+
+            inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do Drive)";
+            inspectorSheetSubtitle.textContent = "Visualização fiel do arquivo do Drive importado.";
+
+            summaryContainer.classList.add('hidden');
+            renderSpreadsheetTable(appSession.driveMatrix);
             renderInspectorUI();
         });
     }
@@ -1149,9 +1243,11 @@ document.addEventListener('DOMContentLoaded', () => {
         appSession.unitName = 'Não identificada';
         appSession.reportFile = null;
         appSession.sigaFile = null;
+        appSession.driveFile = null;
         appSession.status = 'Aguardando Relatório';
         appSession.reportMatrix = [];
         appSession.sigaMatrix = [];
+        appSession.driveMatrix = [];
         appSession.sigaSummaryData = {};
 
         resetInspectorData();
@@ -1203,6 +1299,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         processReportStep(file, rawMatrix);
                     } else if (appState.currentStep === 2) {
                         processSigaStep(file, rawMatrix);
+                    } else if (appState.currentStep === 3) {
+                        processDriveStep(file, rawMatrix);
                     }
                 } else {
                     alert('A planilha selecionada não possui dados.');
