@@ -20,7 +20,16 @@
     <div class="app-container">
         <!-- Cabeçalho Principal -->
         <header class="app-header">
-            <h1 class="app-title">Importador de Planilhas</h1>
+            <div class="header-top-bar">
+                <h1 class="app-title">Importador de Planilhas</h1>
+                <!-- Botão de Alternância do Modo Debug -->
+                <button type="button" class="btn-debug-toggle" id="btnToggleDebug" title="Alternar Painel de Diagnóstico">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                    </svg>
+                    <span>Modo Debug</span>
+                </button>
+            </div>
             <p class="app-subtitle">Selecione um arquivo Excel, CSV, TSV ou ODS para visualizar seus dados.</p>
         </header>
 
@@ -59,6 +68,27 @@
             </div>
         </section>
 
+        <!-- Painel de Diagnóstico (Modo Debug) -->
+        <section class="debug-panel hidden" id="debugPanel">
+            <div class="debug-header">
+                <div class="debug-title-wrapper">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 2v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3 class="debug-title">Painel de Diagnóstico (Modo Debug)</h3>
+                </div>
+                <span class="debug-status-badge">Ativo</span>
+            </div>
+
+            <!-- Avisos e Alertas do Diagnóstico -->
+            <div class="debug-warnings-container hidden" id="debugWarningsContainer"></div>
+
+            <!-- Grid de Estatísticas e Métricas -->
+            <div class="debug-grid" id="debugGrid">
+                <!-- Preenchido via JavaScript -->
+            </div>
+        </section>
+
         <!-- Área de Visualização da Planilha Estilo Excel -->
         <main class="viewer-section">
             <!-- Mensagem quando nenhum arquivo estiver carregado -->
@@ -69,7 +99,7 @@
                 <p class="empty-state-text">Nenhuma planilha carregada.</p>
             </div>
 
-            <!-- Painel de Resumo Financeiro (Exibido acima da tabela) -->
+            <!-- Painel de Resumo Financeiro -->
             <div class="summary-container hidden" id="summaryContainer">
                 <div class="summary-header">
                     <svg class="summary-header-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
