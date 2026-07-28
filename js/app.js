@@ -1,15 +1,17 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Teste de Hipótese: 4 Linhas Iniciais)
+ * Importador de Planilhas - app.js (Arquitetura Dual-Pipeline: SIGA + Relatório)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, escolha do
- * tipo de planilha, tratamento via pipeline e Inspetor do Pipeline (9 Etapas).
+ * Aplicação estática em JavaScript Puro (Vanilla JS) com dois pipelines
+ * de tratamento 100% independentes:
+ * - Pipeline 1: Planilha do SIGA (Com regras automáticas de tratamento)
+ * - Pipeline 2: Planilha de Relatório (Visualização fiel sem transformações)
  * 
  * Arquitetura em Módulos:
  * 1. Mapeamento & Configurações (Central Config, Header Normalization & Number Utilities)
- * 2. Módulo Inspetor do Pipeline (Pipeline Inspector Engine - 9 Etapas)
+ * 2. Módulo Inspetor do Pipeline (Pipeline Inspector Engine - 9 Etapas SIGA / 1 Etapa Relatório)
  * 3. Módulo de Diagnóstico Rápido (Debug & Diagnostic Engine)
- * 4. Motor de Regras & Pipelines (Treatment Pipeline Engine)
+ * 4. Motor de Regras & Pipelines Independentes (Treatment Pipeline Engine)
  * 5. Módulo do Resumo Financeiro (Financial Summary Engine)
  * 6. Gerenciamento do Modal (Modal Controller)
  * 7. Interface & Navegação por Abas (UI & Tab Controller)
@@ -73,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeTab: 'viewer'
     };
 
-    // Objeto do Inspetor do Pipeline (Inspector State - 9 Etapas)
+    // Objeto do Inspetor do Pipeline (Inspector State)
     const inspectorData = {
         steps: [],
         timelineLogs: []
@@ -99,13 +101,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
 
     /**
-     * CONFIGURAÇÃO CENTRALIZADA: Quantidade de linhas iniciais a remover do topo.
-     * Alterável para testes de hipóteses estruturais.
+     * CONFIGURAÇÃO CENTRALIZADA: Quantidade de linhas iniciais a remover do topo no SIGA.
      */
     const LINHAS_INICIAIS_REMOVIDAS = 4;
 
     /**
-     * Tabela Oficial de Padronização de Nomes das Colunas (Regra 5).
+     * Tabela Oficial de Padronização de Nomes das Colunas do SIGA (Regra 5).
      */
     const COLUMN_NAME_MAP = {
         'COM_INCP_AGENTES': 'Remuneração a Pessoal Estatutário (ACS)',
@@ -187,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 2. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine - 9 Etapas)
+    // 2. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -291,6 +292,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="step-info-value">${lastRowStr}</span>
                 </div>
             `;
+
+            // Informações Adicionais para Etapa 1 do Relatório
+            if (step.stepNum === 1 && step.extraInfo.fileName) {
+                detailsBlock.innerHTML += `
+                    <div class="step-info-row">
+                        <span class="step-info-label">Nome do Arquivo:</span>
+                        <span class="step-info-value">${step.extraInfo.fileName}</span>
+                    </div>
+                    <div class="step-info-row">
+                        <span class="step-info-label">Tipo do Arquivo:</span>
+                        <span class="step-info-value">${step.extraInfo.fileType || '-'}</span>
+                    </div>
+                `;
+            }
 
             if (step.stepNum === 3 && step.extraInfo.removedEmptyCols) {
                 detailsBlock.innerHTML += `
@@ -561,12 +576,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. MOTOR DE REGRAS & PIPELINES (Treatment Pipeline Engine)
+    // 4. MOTOR DE REGRAS & PIPELINES INDEPENDENTES (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
-    /**
-     * ETAPA 2: Remover as `count` primeiras linhas (Configurável via LINHAS_INICIAIS_REMOVIDAS).
-     */
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
         if (!matrix || matrix.length <= count) {
             debugContext.removedTopRowsCount = matrix ? matrix.length : 0;
@@ -584,7 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return res;
     }
 
-    // ETAPA 3: Remover colunas vazias
     function removeEmptyColumnsRule(matrix) {
         if (!matrix || matrix.length === 0) return [];
 
@@ -620,7 +631,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return res;
     }
 
-    // ETAPA 4: Remover colunas J, I, H, G, A
     function removeSpecificColumnsByLetterRule(matrix, lettersOrder = ['J', 'I', 'H', 'G', 'A']) {
         if (!matrix || matrix.length === 0) return [];
 
@@ -662,7 +672,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return currentMatrix;
     }
 
-    // ETAPA 5: Remover 2 últimas linhas
     function removeBottomRowsRule(matrix, count = 2) {
         if (!matrix || matrix.length <= count) {
             debugContext.removedBottomRowsCount = matrix ? matrix.length : 0;
@@ -707,7 +716,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return matrix;
     }
 
-    // ETAPA 6 & 7: Renomeação e Correspondência
     function standardizeHeaderNamesRule(matrix, nameMap = COLUMN_NAME_MAP) {
         if (!matrix || matrix.length === 0) return [];
 
@@ -796,19 +804,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Sequência Oficial Estrita do Pipeline da Planilha do SIGA.
-     * Utiliza LINHAS_INICIAIS_REMOVIDAS (4) para a Regra 1.
+     * Dicionário dos Pipelines de Tratamento da Aplicação.
+     * PIPELINE 1: Planilha do SIGA (Com transformações automáticas)
+     * PIPELINE 2: Planilha de Relatório (Visualização fiel sem transformações)
      */
     const SPREADSHEET_PIPELINES = {
         siga: [
-            (matrix) => removeTopRowsRule(matrix, LINHAS_INICIAIS_REMOVIDAS),                // 1. ETAPA 2 (Remover 4 primeiras linhas)
+            (matrix) => removeTopRowsRule(matrix, LINHAS_INICIAIS_REMOVIDAS),                // 1. ETAPA 2
             (matrix) => removeEmptyColumnsRule(matrix),                                       // 2. ETAPA 3
             (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // 3. ETAPA 4
             (matrix) => removeBottomRowsRule(matrix, 2),                                      // 4. ETAPA 5
             (matrix) => inspectAndLogOfficialHeaders(matrix),                                // Inspeção de Cabeçalho
             (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)                   // 5. ETAPAS 6 & 7
         ],
-        relatorio: []
+        relatorio: [] // Nenhuma transformação aplicada ao Relatório
     };
 
     function runTreatmentPipeline(sheetType, rawMatrix) {
@@ -953,13 +962,55 @@ document.addEventListener('DOMContentLoaded', () => {
         modalAlert.classList.add('hidden');
     }
 
+    /**
+     * FLUXO PIPELINE 2: Planilha de Relatório.
+     * Importação e exibição fiel dos dados sem qualquer transformação.
+     */
     function handleSelectRelatorio() {
-        showModalAlert("Este fluxo será implementado em uma versão futura.");
+        appState.selectedType = 'relatorio';
+        closeTypeModal();
+
+        resetInspectorData();
+
+        const rawMatrix = appState.rawMatrixData || [];
+        appState.treatedMatrixData = rawMatrix;
+
+        const fileName = appState.currentFile ? appState.currentFile.name : 'Arquivo';
+        const fileExt = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')).toLowerCase() : '';
+
+        // ETAPA 1 do Inspector: Dados Brutos do Relatório
+        recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
+            fileName: fileName,
+            fileType: fileExt
+        });
+
+        // Logs Cronológicos Estritos da Planilha de Relatório
+        addInspectorLog("✔ Arquivo importado.");
+        addInspectorLog("✔ Pipeline da Planilha de Relatório iniciado.");
+        addInspectorLog("✔ Nenhuma transformação aplicada.");
+        addInspectorLog("✔ Visualização concluída.");
+
+        // Oculta o resumo financeiro (já que não há cálculos de totais)
+        summaryContainer.classList.add('hidden');
+
+        // Renderiza a tabela fiel, o painel de diagnóstico e o Inspector
+        renderSpreadsheetTable(rawMatrix);
+        renderDebugPanel();
+        renderInspectorUI();
+
+        // Exibe a barra de abas de navegação
+        viewTabsBar.classList.remove('hidden');
     }
 
+    /**
+     * FLUXO PIPELINE 1: Planilha do SIGA.
+     * Tratamento completo de 5 passos + resumo financeiro.
+     */
     function handleSelectSiga() {
         appState.selectedType = 'siga';
         closeTypeModal();
+
+        resetInspectorData();
 
         recordStepSnapshot(1, "Planilha original importada", appState.rawMatrixData);
         addInspectorLog("✔ Arquivo lido e carregado com sucesso pelo SheetJS.");
@@ -1171,7 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.innerHTML = '';
 
         if (!matrix || matrix.length === 0) {
-            alert('Após o tratamento, a planilha não possui dados a exibir.');
+            alert('A planilha não possui dados a exibir.');
             resetView();
             return;
         }
