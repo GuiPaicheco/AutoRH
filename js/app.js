@@ -1,25 +1,21 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Wizard 4 Etapas & Sessão Unificada)
+ * Importador de Planilhas - app.js (Design Minimalista & Pipeline de Relatório Ampliado)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) reestruturada para um
- * fluxo operacional guiado por etapas (Wizard):
- * - PASSO 1: ① Relatório (Importação do Relatório e criação da Sessão)
- * - PASSO 2: ② SIGA (Importação do SIGA e aplicação das regras de tratamento)
- * - PASSO 3: ③ Processamento (Preparado para futuro cruzamento no FinalProcessor)
- * - PASSO 4: ④ Resultado (Preparado para relatório final unificado)
+ * Aplicação estática em JavaScript Puro (Vanilla JS) com interface minimalista
+ * e fluxo em etapas (Wizard 4 Passos).
  * 
- * Arquitetura em Módulos:
- * 1. Mapeamento & Configurações (Central Config, Header Normalization & Number Utilities)
- * 2. Módulo de Gerenciamento da Sessão (Session Engine - appSession)
- * 3. Módulo Stub do Processador Final (FinalProcessor Stub Engine)
- * 4. Módulo Inspetor do Pipeline (Pipeline Inspector Engine)
- * 5. Módulo de Diagnóstico Rápido (Debug & Diagnostic Engine)
- * 6. Motor de Regras & Pipelines (Treatment Pipeline Engine)
- * 7. Módulo do Resumo Financeiro (Financial Summary Engine)
- * 8. Gerenciador do Wizard de 4 Etapas (Wizard Controller)
- * 9. Interface & Navegação por Abas (UI & Tab Controller)
- * 10. Leitura de Arquivo & Renderização (Spreadsheet Reader & Table Renderer)
+ * Pipeline de Tratamento da Planilha de Relatório:
+ * 1. Importar arquivo
+ * 2. Ler célula A2 e identificar a Unidade de Saúde
+ * 3. Criar a Sessão
+ * 4. Remover as 6 primeiras linhas
+ * 5. Remover colunas 100% vazias
+ * 6. Recalcular letras das colunas (A..Z) e atualizar visualização e Inspector
+ * 
+ * Pipeline de Tratamento da Planilha do SIGA:
+ * - Permanece 100% inalterado (4 linhas topo, colunas vazias, J/I/H/G/A, 2 linhas rodapé,
+ *   padronização e resumo financeiro BRL).
  * ============================================================================
  */
 
@@ -31,14 +27,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropZone = document.getElementById('dropZone');
     const dropZonePrompt = document.getElementById('dropZonePrompt');
     const btnChooseFileLabel = document.getElementById('btnChooseFileLabel');
-    const fileInfoCard = document.getElementById('fileInfoCard');
-    const fileNameText = document.getElementById('fileNameText');
     const btnRemoveFile = document.getElementById('btnRemoveFile');
 
     const emptyState = document.getElementById('emptyState');
     const tableWrapper = document.getElementById('tableWrapper');
     const tableHead = document.getElementById('tableHead');
     const tableBody = document.getElementById('tableBody');
+
+    // Cabeçalho Minimalista
+    const headerUnitTitle = document.getElementById('headerUnitTitle');
+    const headerMetaRow = document.getElementById('headerMetaRow');
+    const metaReportItem = document.getElementById('metaReportItem');
+    const metaSigaItem = document.getElementById('metaSigaItem');
+    const metaStatusBadge = document.getElementById('metaStatusBadge');
 
     // Wizard Stepper (4 Etapas)
     const stepItemReport = document.getElementById('stepItemReport');
@@ -50,13 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stepStatusSiga = document.getElementById('stepStatusSiga');
     const connector1 = document.getElementById('connector1');
 
-    // Sessão Ativa
-    const sessionInfoCard = document.getElementById('sessionInfoCard');
-    const sessionUnitName = document.getElementById('sessionUnitName');
-    const sessionReportFile = document.getElementById('sessionReportFile');
-    const sessionSigaFile = document.getElementById('sessionSigaFile');
-    const sessionTimestamp = document.getElementById('sessionTimestamp');
-    const sessionStatusTag = document.getElementById('sessionStatusTag');
+    // Sessão & Alternador de Planilhas
     const sessionSheetSelector = document.getElementById('sessionSheetSelector');
     const btnViewReportSheet = document.getElementById('btnViewReportSheet');
     const btnViewSigaSheet = document.getElementById('btnViewSigaSheet');
@@ -78,16 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryContainer = document.getElementById('summaryContainer');
     const summaryGrid = document.getElementById('summaryGrid');
 
-    // Elementos do Modo Debug Secundário
-    const btnToggleDebug = document.getElementById('btnToggleDebug');
-    const debugPanel = document.getElementById('debugPanel');
-    const debugGrid = document.getElementById('debugGrid');
-    const debugWarningsContainer = document.getElementById('debugWarningsContainer');
-
     // Estado Geral da Aplicação
     const appState = {
         currentStep: 1, // 1: Relatório | 2: SIGA | 3: Processamento | 4: Resultado
-        isDebugMode: false,
         activeTab: 'viewer'
     };
 
@@ -95,28 +83,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
     // ------------------------------------------------------------------------
 
-    /**
-     * GERENCIADOR DE ESTADO DA SESSÃO ATIVA (appSession)
-     * Mantém os dados processados e disponíveis para todas as etapas.
-     */
     const appSession = {
         isActive: false,
         unitName: 'Não identificada',
         reportFile: null,
         sigaFile: null,
-        timestamp: null,
         status: 'Aguardando Relatório', // 'Aguardando Relatório' | 'Relatório Carregado' | 'SIGA Carregado' | 'Pronto para Processamento'
         reportMatrix: [],
         sigaMatrix: [],
         reportInspector: { steps: [], timelineLogs: [] },
         sigaInspector: { steps: [], timelineLogs: [] },
         sigaSummaryData: {},
-        activeViewSheet: 'report' // 'report' ou 'siga'
+        activeViewSheet: 'report'
     };
 
     /**
      * MÓDULO STUB: PROCESSADOR FINAL (FinalProcessor)
-     * Módulo preparado para receber futuramente os dados tratados de ambas as planilhas.
      */
     const FinalProcessor = {
         isReady: false,
@@ -143,21 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inspector State Context
     let currentInspectorSteps = [];
     let currentInspectorTimelineLogs = [];
-
-    // Estado de Diagnóstico Secundário (Debug Context)
-    const debugContext = {
-        rawRowsCount: 0,
-        rawColsCount: 0,
-        officialPostStep4Headers: [],
-        removedTopRowsCount: 0,
-        removedBottomRowsCount: 0,
-        removedEmptyColsCount: 0,
-        removedSpecificColsLog: [],
-        renamedColsLog: [],
-        groupedCategoriesLog: [],
-        missingExpectedCols: [],
-        categoryTotals: {}
-    };
 
     // ------------------------------------------------------------------------
     // 2. CONFIGURAÇÕES CENTRALIZADAS DE TRATAMENTO
@@ -359,7 +326,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            if (step.stepNum === 3 && step.extraInfo.removedEmptyCols) {
+            // Exibição do Descarte de Colunas Vazias (Relatório ETAPA 2 ou SIGA ETAPA 3)
+            if (step.extraInfo.removedEmptyCols) {
                 detailsBlock.innerHTML += `
                     <div class="step-info-row">
                         <span class="step-info-label">Colunas vazias removidas:</span>
@@ -525,124 +493,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. MÓDULO DE DIAGNÓSTICO RÁPIDO (Debug & Diagnostic Engine)
-    // ------------------------------------------------------------------------
-
-    function resetDebugContext() {
-        debugContext.rawRowsCount = 0;
-        debugContext.rawColsCount = 0;
-        debugContext.officialPostStep4Headers = [];
-        debugContext.removedTopRowsCount = 0;
-        debugContext.removedBottomRowsCount = 0;
-        debugContext.removedEmptyColsCount = 0;
-        debugContext.removedSpecificColsLog = [];
-        debugContext.renamedColsLog = [];
-        debugContext.groupedCategoriesLog = [];
-        debugContext.missingExpectedCols = [];
-        debugContext.categoryTotals = {};
-    }
-
-    function renderDebugPanel() {
-        if (!appState.isDebugMode) {
-            debugPanel.classList.add('hidden');
-            return;
-        }
-
-        debugPanel.classList.remove('hidden');
-        debugWarningsContainer.innerHTML = '';
-        debugGrid.innerHTML = '';
-
-        if (debugContext.missingExpectedCols.length > 0) {
-            debugWarningsContainer.classList.remove('hidden');
-            debugContext.missingExpectedCols.forEach(missingCol => {
-                const warnCard = document.createElement('div');
-                warnCard.className = 'debug-warning-card';
-                warnCard.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <span><strong>Aviso de Diagnóstico:</strong> Coluna esperada não encontrada na 1ª linha pós-limpeza: <code>${missingCol}</code></span>
-                `;
-                debugWarningsContainer.appendChild(warnCard);
-            });
-        } else {
-            debugWarningsContainer.classList.add('hidden');
-        }
-
-        const cardImport = document.createElement('div');
-        cardImport.className = 'debug-card';
-        cardImport.innerHTML = `
-            <div class="debug-card-title">1. Dados Importados</div>
-            <div class="debug-metric-list">
-                <div class="debug-metric-item"><span class="debug-metric-label">Linhas Brutas:</span><span class="debug-metric-value">${debugContext.rawRowsCount}</span></div>
-                <div class="debug-metric-item"><span class="debug-metric-label">Colunas Brutas:</span><span class="debug-metric-value">${debugContext.rawColsCount}</span></div>
-                <div class="debug-metric-item"><span class="debug-metric-label">Sessão Ativa:</span><span class="debug-metric-value">${appSession.unitName}</span></div>
-            </div>
-        `;
-
-        const cardHeaders = document.createElement('div');
-        cardHeaders.className = 'debug-card';
-        const normItems = debugContext.officialPostStep4Headers.map(item => {
-            return `<div><strong>Coluna ${item.letter}:</strong> "${item.original}" ➔ <code>"${item.normalized}"</code></div>`;
-        }).join('');
-        cardHeaders.innerHTML = `
-            <div class="debug-card-title">2. Cabeçalhos da 1ª Linha (Pós-Passo 4 SIGA)</div>
-            <div class="debug-log-box">${normItems || 'Nenhum cabeçalho identificado'}</div>
-        `;
-
-        const cardRemovals = document.createElement('div');
-        cardRemovals.className = 'debug-card';
-        cardRemovals.innerHTML = `
-            <div class="debug-card-title">3. Remoções do Pipeline SIGA</div>
-            <div class="debug-metric-list">
-                <div class="debug-metric-item"><span class="debug-metric-label">Linhas do Topo Removidas:</span><span class="debug-metric-value">${debugContext.removedTopRowsCount}</span></div>
-                <div class="debug-metric-item"><span class="debug-metric-label">Linhas do Rodapé Removidas:</span><span class="debug-metric-value">${debugContext.removedBottomRowsCount}</span></div>
-                <div class="debug-metric-item"><span class="debug-metric-label">Colunas Vazias Removidas:</span><span class="debug-metric-value">${debugContext.removedEmptyColsCount}</span></div>
-                <div class="debug-metric-item"><span class="debug-metric-label">Colunas Específicas Removidas:</span><span class="debug-metric-value">${debugContext.removedSpecificColsLog.join(', ') || 'Nenhuma'}</span></div>
-            </div>
-        `;
-
-        const cardRenames = document.createElement('div');
-        cardRenames.className = 'debug-card';
-        const renameLogs = debugContext.renamedColsLog.map(item => `<div>• Coluna ${item.letter}: <code>"${item.original}"</code> ➔ <strong>${item.renamed}</strong></div>`).join('');
-        cardRenames.innerHTML = `
-            <div class="debug-card-title">4. Renomeação da 1ª Linha SIGA</div>
-            <div class="debug-log-box">${renameLogs || 'Nenhuma coluna renomeada'}</div>
-        `;
-
-        const cardTotals = document.createElement('div');
-        cardTotals.className = 'debug-card';
-        const totalItems = Object.keys(debugContext.categoryTotals).map(cat => {
-            return `<div class="debug-metric-item"><span class="debug-metric-label">${cat}:</span><span class="debug-metric-value">${formatBRL(debugContext.categoryTotals[cat])}</span></div>`;
-        }).join('');
-        cardTotals.innerHTML = `
-            <div class="debug-card-title">5. Totais Calculados SIGA</div>
-            <div class="debug-metric-list">${totalItems || 'Nenhum total calculado'}</div>
-        `;
-
-        debugGrid.appendChild(cardImport);
-        debugGrid.appendChild(cardHeaders);
-        debugGrid.appendChild(cardRemovals);
-        debugGrid.appendChild(cardRenames);
-        debugGrid.appendChild(cardTotals);
-    }
-
-    // ------------------------------------------------------------------------
-    // 5. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 4. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
         if (!matrix || matrix.length <= count) {
-            debugContext.removedTopRowsCount = matrix ? matrix.length : 0;
             const res = [];
             recordStepSnapshot(2, `Após remover as ${count} primeiras linhas`, res);
             addInspectorLog(`${count} primeiras linhas removidas do topo da planilha.`);
             return res;
         }
 
-        debugContext.removedTopRowsCount = count;
         const res = matrix.slice(count);
-
         recordStepSnapshot(2, `Após remover as ${count} primeiras linhas`, res);
         addInspectorLog(`✔ ${count} primeiras linhas removidas.`);
         return res;
@@ -673,7 +535,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        debugContext.removedEmptyColsCount = removedEmptyColsLetters.length;
         const res = matrix.map(row => nonArrayColIndices.map(colIdx => row[colIdx]));
 
         recordStepSnapshot(3, "Após remover as colunas completamente vazias", res, {
@@ -687,7 +548,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!matrix || matrix.length === 0) return [];
 
         let currentMatrix = matrix.map(row => [...row]);
-        debugContext.removedSpecificColsLog = [];
         const removedDetailsMapping = [];
 
         lettersOrder.forEach(letter => {
@@ -708,7 +568,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         return newRow;
                     });
 
-                    debugContext.removedSpecificColsLog.push(letter);
                     removedDetailsMapping.push({ letter, name: colNameInCurrent });
                     addInspectorLog(`✔ Coluna ${letter} (${colNameInCurrent}) removida.`);
                 } else {
@@ -726,16 +585,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function removeBottomRowsRule(matrix, count = 2) {
         if (!matrix || matrix.length <= count) {
-            debugContext.removedBottomRowsCount = matrix ? matrix.length : 0;
             const res = [];
             recordStepSnapshot(5, "Após remover as duas últimas linhas", res);
             addInspectorLog("2 últimas linhas removidas.");
             return res;
         }
 
-        debugContext.removedBottomRowsCount = count;
         const res = matrix.slice(0, matrix.length - count);
-
         recordStepSnapshot(5, "Após remover as duas últimas linhas", res);
         addInspectorLog("✔ 2 últimas linhas do rodapé removidas.");
         return res;
@@ -745,7 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!matrix || matrix.length === 0) return matrix;
 
         const officialRow = matrix[0] || [];
-        debugContext.officialPostStep4Headers = [];
 
         console.log("%c[SIGA Pipeline] Cabeçalhos encontrados na 1ª linha tratada (Pós-Passo 4):", "color: #2563eb; font-weight: bold; font-size: 13px;");
 
@@ -755,13 +610,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const normVal = normalizeHeaderName(originalVal);
 
             console.log(`  Coluna ${letter} (índice ${colIdx}) ➔ "${originalVal}" [Normalizado: "${normVal}"]`);
-
-            debugContext.officialPostStep4Headers.push({
-                letter: letter,
-                colIndex: colIdx,
-                original: originalVal,
-                normalized: normVal
-            });
         });
 
         addInspectorLog("✔ Cabeçalho da 1ª linha inspecionado e identificado.");
@@ -773,9 +621,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const updatedMatrix = matrix.map(row => [...row]);
         const officialHeaderRow = updatedMatrix[0] || [];
-
-        debugContext.renamedColsLog = [];
-        debugContext.missingExpectedCols = [];
 
         const normalizedMap = {};
         Object.keys(nameMap).forEach(key => {
@@ -809,11 +654,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     original: origStr,
                     renamed: newName
                 });
-                debugContext.renamedColsLog.push({
-                    letter,
-                    original: origStr,
-                    renamed: newName
-                });
                 foundNormalizedKeys.add(normCell);
                 return newName;
             }
@@ -828,7 +668,6 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.keys(COLUMN_NAME_MAP).forEach(key => {
             const normKey = normalizeHeaderName(key);
             if (!foundNormalizedKeys.has(normKey)) {
-                debugContext.missingExpectedCols.push(key);
                 console.warn(`[SIGA Pipeline Warning] Coluna esperada não encontrada na 1ª linha: "${key}"`);
                 addInspectorLog(`❌ ETAPA 6/7: Coluna esperada "${key}" não foi encontrada na 1ª linha tratada.`, false, `Verifique a grafia exata no arquivo.`);
             }
@@ -876,7 +715,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. MÓDULO DO RESUMO FINANCEIRO (SIGA)
+    // 5. MÓDULO DO RESUMO FINANCEIRO (SIGA)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -889,7 +728,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const categoryTotals = {};
         const groupedCategories = [];
         const equations = [];
-        debugContext.groupedCategoriesLog = [];
 
         validStandardNames.forEach(stdName => {
             const matchingCols = [];
@@ -919,7 +757,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (validStandardNames.includes(trimmedName)) {
                 if (!categoryTotals[trimmedName]) {
                     categoryTotals[trimmedName] = 0;
-                    debugContext.groupedCategoriesLog.push(trimmedName);
                 }
 
                 let categorySumForCol = 0;
@@ -948,7 +785,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         addInspectorLog("✔ Somas e resumo financeiro finalizados.");
 
-        debugContext.categoryTotals = categoryTotals;
         return categoryTotals;
     }
 
@@ -987,7 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 7. GERENCIADOR DO WIZARD DE 4 ETAPAS & SESSÃO UNIFICADA
+    // 6. GERENCIADOR DO WIZARD DE 4 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -1027,23 +863,26 @@ document.addEventListener('DOMContentLoaded', () => {
             stepStatusSiga.textContent = '✔ Concluído';
 
             connector1.classList.add('completed');
-
             stepItemProcess.className = 'wizard-step-item active';
         }
     }
 
-    function updateSessionCardUI() {
+    /**
+     * ATUALIZA O CABEÇALHO MINIMALISTA E METADADOS DA SESSÃO
+     */
+    function updateMinimalHeaderUI() {
         if (!appSession.isActive) {
-            sessionInfoCard.classList.add('hidden');
+            headerUnitTitle.textContent = 'Selecione a Planilha de Relatório';
+            headerMetaRow.classList.add('hidden');
             return;
         }
 
-        sessionInfoCard.classList.remove('hidden');
-        sessionUnitName.textContent = appSession.unitName;
-        sessionReportFile.textContent = appSession.reportFile ? appSession.reportFile.name : 'Não carregado';
-        sessionSigaFile.textContent = appSession.sigaFile ? appSession.sigaFile.name : 'Não carregado';
-        sessionTimestamp.textContent = appSession.timestamp || '-';
-        sessionStatusTag.textContent = appSession.status;
+        headerUnitTitle.textContent = appSession.unitName;
+        headerMetaRow.classList.remove('hidden');
+
+        metaReportItem.innerHTML = `📄 Relatório: <strong>${appSession.reportFile ? appSession.reportFile.name : 'Não carregado'}</strong>`;
+        metaSigaItem.innerHTML = `📊 SIGA: <strong>${appSession.sigaFile ? appSession.sigaFile.name : 'Não carregado'}</strong>`;
+        metaStatusBadge.textContent = appSession.status;
 
         if (appSession.reportMatrix.length > 0 && appSession.sigaMatrix.length > 0) {
             sessionSheetSelector.classList.remove('hidden');
@@ -1053,12 +892,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * PROCESSA A ETAPA 1 DO WIZARD: Importar Relatório
+     * PROCESSA A ETAPA 1 DO WIZARD: Importar Relatório com Expansão de Pipeline
+     * Pipeline:
+     * 1. Importar arquivo
+     * 2. Ler célula A2 -> Identificar Unidade de Saúde
+     * 3. Criar a sessão
+     * 4. Remover as 6 primeiras linhas (matrix.slice(6))
+     * 5. Remover colunas 100% vazias
+     * 6. Recalcular visualização e Inspector
      */
     function processReportStep(file, rawMatrix) {
         resetInspectorData();
 
-        // Extrai Unidade de Saúde da Célula A2 (Linha 2, Coluna A da matriz bruta)
+        // 1 & 2. Identifica a Unidade de Saúde na Célula A2 (Linha 2, Coluna A da matriz bruta)
         let extractedUnit = 'Unidade de Saúde';
         if (rawMatrix && rawMatrix.length > 1 && rawMatrix[1][0]) {
             const rawA2 = String(rawMatrix[1][0]).trim();
@@ -1067,49 +913,83 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Inicializa a Sessão Ativa
+        // 3. Inicializa a Sessão Ativa
         appSession.isActive = true;
         appSession.unitName = extractedUnit;
         appSession.reportFile = file;
-        appSession.timestamp = new Date().toLocaleTimeString();
         appSession.status = 'Relatório Carregado';
-        appSession.reportMatrix = rawMatrix;
 
         const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
 
+        // Snapshot Inicial (Importação)
         recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
             fileName: file.name,
             fileType: fileExt
         });
 
+        // 4. Remover as 6 primeiras linhas
+        let treatedMatrix = rawMatrix.length > 6 ? rawMatrix.slice(6) : [];
+
+        // 5. Remover todas as colunas completamente vazias
+        let maxCols = 0;
+        treatedMatrix.forEach(row => { if (row.length > maxCols) maxCols = row.length; });
+
+        const nonArrayColIndices = [];
+        const removedEmptyColsLetters = [];
+
+        for (let colIdx = 0; colIdx < maxCols; colIdx++) {
+            let hasContent = false;
+            for (let rowIdx = 0; rowIdx < treatedMatrix.length; rowIdx++) {
+                const cellVal = treatedMatrix[rowIdx][colIdx];
+                if (!isCellEmpty(cellVal)) {
+                    hasContent = true;
+                    break;
+                }
+            }
+            if (hasContent) {
+                nonArrayColIndices.push(colIdx);
+            } else {
+                removedEmptyColsLetters.push(getExcelColumnName(colIdx));
+            }
+        }
+
+        treatedMatrix = treatedMatrix.map(row => nonArrayColIndices.map(colIdx => row[colIdx]));
+        appSession.reportMatrix = treatedMatrix;
+
+        // Snapshot Etapa 2 do Relatório (Tratamento de 6 linhas + colunas vazias)
+        recordStepSnapshot(2, "Após remoção de 6 linhas e colunas vazias", treatedMatrix, {
+            removedEmptyCols: removedEmptyColsLetters
+        });
+
+        // Logs do Inspector
         addInspectorLog("✔ Arquivo do Relatório importado.");
         addInspectorLog(`✔ Unidade de Saúde identificada na célula A2: "${extractedUnit}".`);
-        addInspectorLog("✔ Pipeline da Planilha de Relatório iniciado.");
-        addInspectorLog("✔ Nenhuma transformação aplicada ao Relatório.");
-        addInspectorLog("✔ Visualização do Relatório concluída.");
+        addInspectorLog("✔ 6 primeiras linhas removidas.");
+        addInspectorLog("✔ Colunas vazias identificadas.");
+        addInspectorLog(`✔ ${removedEmptyColsLetters.length} colunas removidas.`, true, removedEmptyColsLetters.join(', '));
+        addInspectorLog("✔ Visualização atualizada.");
 
         appSession.reportInspector = {
             steps: [...currentInspectorSteps],
             timelineLogs: [...currentInspectorTimelineLogs]
         };
 
-        // Avança o Wizard para a Etapa 2 (SIGA)
+        // Avança o Wizard para o Passo 2 (SIGA)
         appState.currentStep = 2;
         appSession.activeViewSheet = 'report';
 
         updateWizardUI();
-        updateSessionCardUI();
+        updateMinimalHeaderUI();
 
         summaryContainer.classList.add('hidden');
-        renderSpreadsheetTable(rawMatrix);
-        renderDebugPanel();
+        renderSpreadsheetTable(treatedMatrix);
         renderInspectorUI();
 
         viewTabsBar.classList.remove('hidden');
     }
 
     /**
-     * PROCESSA A ETAPA 2 DO WIZARD: Importar SIGA
+     * PROCESSA A ETAPA 2 DO WIZARD: Importar SIGA (Manter 100% inalterado)
      */
     function processSigaStep(file, rawMatrix) {
         resetInspectorData();
@@ -1117,15 +997,12 @@ document.addEventListener('DOMContentLoaded', () => {
         recordStepSnapshot(1, "Planilha original importada", rawMatrix);
         addInspectorLog("✔ Arquivo do SIGA lido e carregado com sucesso pelo SheetJS.");
 
-        // Executa todas as regras de tratamento do SIGA (4 linhas topo, colunas vazias, J/I/H/G/A, rodapé, padronização)
         const treated = runTreatmentPipeline('siga', rawMatrix);
         appSession.sigaMatrix = treated;
 
-        // Calcula o Resumo Financeiro BRL
         const summaryData = calculateFinancialSummary(treated);
         appSession.sigaSummaryData = summaryData;
         appSession.sigaFile = file;
-        appSession.timestamp = new Date().toLocaleTimeString();
         appSession.status = 'Pronto para Processamento';
 
         appSession.sigaInspector = {
@@ -1133,15 +1010,13 @@ document.addEventListener('DOMContentLoaded', () => {
             timelineLogs: [...currentInspectorTimelineLogs]
         };
 
-        // Prepara o Módulo Stub FinalProcessor
         FinalProcessor.process(appSession);
 
-        // Avança o Wizard para a Etapa 3 (Processamento)
         appState.currentStep = 3;
         appSession.activeViewSheet = 'siga';
 
         updateWizardUI();
-        updateSessionCardUI();
+        updateMinimalHeaderUI();
 
         btnViewReportSheet.classList.remove('active');
         btnViewSigaSheet.classList.add('active');
@@ -1151,14 +1026,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
-        renderDebugPanel();
         renderInspectorUI();
 
         viewTabsBar.classList.remove('hidden');
     }
 
     // ------------------------------------------------------------------------
-    // 8. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 7. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function initTabNavigation() {
@@ -1187,7 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentInspectorTimelineLogs = appSession.reportInspector.timelineLogs;
 
             inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha de Relatório)";
-            inspectorSheetSubtitle.textContent = "Visualização fiel do arquivo de relatório importado.";
+            inspectorSheetSubtitle.textContent = "Visualização do relatório tratado (6 linhas do topo e colunas vazias removidas).";
 
             summaryContainer.classList.add('hidden');
             renderSpreadsheetTable(appSession.reportMatrix);
@@ -1218,12 +1092,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dropZone.addEventListener('dragover', handleDragOver);
         dropZone.addEventListener('dragleave', handleDragLeave);
         dropZone.addEventListener('drop', handleDrop);
-
-        btnToggleDebug.addEventListener('click', () => {
-            appState.isDebugMode = !appState.isDebugMode;
-            btnToggleDebug.classList.toggle('active', appState.isDebugMode);
-            renderDebugPanel();
-        });
 
         initTabNavigation();
     }
@@ -1270,32 +1138,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        showFileName(file.name);
         readSpreadsheetFile(file);
-    }
-
-    function showFileName(name) {
-        fileNameText.textContent = name;
-        fileInfoCard.classList.remove('hidden');
     }
 
     function resetView() {
         fileInput.value = '';
-        fileNameText.textContent = 'Nenhum arquivo';
-        fileInfoCard.classList.add('hidden');
 
         appState.currentStep = 1;
         appSession.isActive = false;
         appSession.unitName = 'Não identificada';
         appSession.reportFile = null;
         appSession.sigaFile = null;
-        appSession.timestamp = null;
         appSession.status = 'Aguardando Relatório';
         appSession.reportMatrix = [];
         appSession.sigaMatrix = [];
         appSession.sigaSummaryData = {};
 
-        resetDebugContext();
         resetInspectorData();
 
         tableHead.innerHTML = '';
@@ -1305,12 +1163,11 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorLogTimeline.innerHTML = '';
 
         updateWizardUI();
-        updateSessionCardUI();
+        updateMinimalHeaderUI();
 
         viewTabsBar.classList.add('hidden');
         summaryContainer.classList.add('hidden');
         tableWrapper.classList.add('hidden');
-        debugPanel.classList.add('hidden');
 
         appState.activeTab = 'viewer';
         btnTabViewer.classList.add('active');
@@ -1322,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 8. LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -1342,12 +1199,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (rawMatrix && rawMatrix.length > 0) {
-                    debugContext.rawRowsCount = rawMatrix.length;
-                    let maxCols = 0;
-                    rawMatrix.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
-                    debugContext.rawColsCount = maxCols;
-
-                    // Encaminha a planilha para a etapa correspondente do Wizard
                     if (appState.currentStep === 1) {
                         processReportStep(file, rawMatrix);
                     } else if (appState.currentStep === 2) {
@@ -1366,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 10. RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 9. RENDERIZAÇÃO DA TABELA (Table Renderer)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {

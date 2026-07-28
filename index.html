@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Importador de Planilhas - Fluxo Operacional</title>
+    <title>Importador de Planilhas</title>
     
     <!-- Fonte Google Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,19 +18,20 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Cabeçalho Principal -->
-        <header class="app-header">
-            <div class="header-top-bar">
-                <h1 class="app-title">Importador de Planilhas</h1>
-                <!-- Botão de Alternância do Modo Debug -->
-                <button type="button" class="btn-debug-toggle" id="btnToggleDebug" title="Alternar Painel de Diagnóstico">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                    </svg>
-                    <span>Modo Debug</span>
-                </button>
+        <!-- CABEÇALHO MINIMALISTA (Foco na Unidade de Saúde) -->
+        <header class="app-header-minimal">
+            <div class="header-main-info">
+                <span class="header-unit-label">SESSÃO ATIVA • UNIDADE DE SAÚDE</span>
+                <h1 class="header-unit-title" id="headerUnitTitle">Selecione a Planilha de Relatório</h1>
             </div>
-            <p class="app-subtitle">Fluxo operacional unificado: Importação do Relatório e do SIGA em etapas guiadas.</p>
+            
+            <div class="header-meta-row hidden" id="headerMetaRow">
+                <span class="meta-item" id="metaReportItem">📄 Relatório: <strong>Não carregado</strong></span>
+                <span class="meta-divider">•</span>
+                <span class="meta-item" id="metaSigaItem">📊 SIGA: <strong>Não carregado</strong></span>
+                <span class="meta-divider">•</span>
+                <span class="meta-badge" id="metaStatusBadge">Aguardando Relatório</span>
+            </div>
         </header>
 
         <!-- ASSISTENTE DE ETAPAS (WIZARD STEPPER - 4 ETAPAS) -->
@@ -77,47 +78,7 @@
             </div>
         </section>
 
-        <!-- PAINEL DA SESSÃO ATIVA -->
-        <section class="session-info-card hidden" id="sessionInfoCard">
-            <div class="session-header">
-                <div class="session-title-wrapper">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                    <div class="session-unit-info">
-                        <span class="session-label">Unidade de Saúde (Sessão Ativa):</span>
-                        <h3 class="session-unit-name" id="sessionUnitName">Não identificada</h3>
-                    </div>
-                </div>
-                <span class="session-status-tag" id="sessionStatusTag">Sessão Iniciada</span>
-            </div>
-            
-            <div class="session-metrics-grid">
-                <div class="session-metric-item">
-                    <span class="session-metric-label">Arquivo de Relatório:</span>
-                    <span class="session-metric-val" id="sessionReportFile">Não carregado</span>
-                </div>
-                <div class="session-metric-item">
-                    <span class="session-metric-label">Arquivo do SIGA:</span>
-                    <span class="session-metric-val" id="sessionSigaFile">Não carregado</span>
-                </div>
-                <div class="session-metric-item">
-                    <span class="session-metric-label">Última Atualização:</span>
-                    <span class="session-metric-val" id="sessionTimestamp">-</span>
-                </div>
-            </div>
-
-            <!-- Alternador de Planilhas da Sessão na Tabela -->
-            <div class="session-sheet-selector hidden" id="sessionSheetSelector">
-                <span class="selector-label">Exibir na Tabela / Inspector:</span>
-                <div class="selector-btn-group">
-                    <button type="button" class="btn-sheet-toggle active" id="btnViewReportSheet">📄 Planilha de Relatório</button>
-                    <button type="button" class="btn-sheet-toggle" id="btnViewSigaSheet">📊 Planilha do SIGA</button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Seção de Importação de Arquivo Conforme Etapa do Wizard -->
+        <!-- Seção de Importação de Arquivo -->
         <section class="upload-section">
             <div class="drop-zone" id="dropZone">
                 <div class="drop-zone-content">
@@ -134,36 +95,17 @@
                 </div>
             </div>
 
-            <!-- Card do Arquivo Atual -->
-            <div class="file-info-card hidden" id="fileInfoCard">
-                <div class="file-info-details">
-                    <svg class="file-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <div class="file-text-wrapper">
-                        <span class="file-label" id="fileCurrentLabel">Arquivo da Etapa:</span>
-                        <span class="file-name" id="fileNameText">Nenhum arquivo</span>
-                    </div>
+            <!-- Alternador de Planilhas na Tabela -->
+            <div class="session-sheet-selector hidden" id="sessionSheetSelector">
+                <span class="selector-label">Exibir na Tabela / Inspector:</span>
+                <div class="selector-btn-group">
+                    <button type="button" class="btn-sheet-toggle active" id="btnViewReportSheet">📄 Planilha de Relatório</button>
+                    <button type="button" class="btn-sheet-toggle" id="btnViewSigaSheet">📊 Planilha do SIGA</button>
                 </div>
                 <button type="button" class="btn-secondary" id="btnRemoveFile" title="Reiniciar Sessão">
                     Reiniciar Sessão
                 </button>
             </div>
-        </section>
-
-        <!-- Painel de Diagnóstico (Modo Debug Secundário) -->
-        <section class="debug-panel hidden" id="debugPanel">
-            <div class="debug-header">
-                <div class="debug-title-wrapper">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 2v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <h3 class="debug-title">Painel de Diagnóstico Rápido</h3>
-                </div>
-                <span class="debug-status-badge">Ativo</span>
-            </div>
-            <div class="debug-warnings-container hidden" id="debugWarningsContainer"></div>
-            <div class="debug-grid" id="debugGrid"></div>
         </section>
 
         <!-- Barra de Navegação por Abas Principais -->
@@ -188,7 +130,7 @@
                 <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <p class="empty-state-text">Importe a Planilha de Relatório na Etapa 1 para iniciar a sessão.</p>
+                <p class="empty-state-text">Importe a Planilha de Relatório para iniciar a sessão.</p>
             </div>
 
             <!-- CONTEÚDO DA ABA 1: VISUALIZAÇÃO PADRÃO DA PLANILHA -->
