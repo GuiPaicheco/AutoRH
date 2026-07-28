@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Importador de Planilhas (Estilo Excel / Google Sheets) - Estilos Principais
+   Importador de Planilhas (Estilo Excel / Google Sheets + Inspector do Pipeline)
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -40,7 +40,7 @@
     --summary-bg: #f0fdf4;
     --summary-border: #a7f3d0;
     
-    /* Cores do Modo Debug */
+    /* Cores do Modo Debug & Inspector */
     --debug-bg: #0f172a;
     --debug-card-bg: #1e293b;
     --debug-border: #334155;
@@ -92,7 +92,7 @@ body {
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.25rem;
 }
 
 /* --------------------------------------------------------------------------
@@ -172,7 +172,7 @@ body {
     background-color: var(--bg-card);
     border: 2px dashed var(--border-dark);
     border-radius: var(--radius-md);
-    padding: 2rem 1.5rem;
+    padding: 1.75rem 1.5rem;
     text-align: center;
     box-shadow: var(--shadow-sm);
     transition: all var(--transition-normal);
@@ -305,133 +305,343 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   4. Painel de Diagnóstico do Modo Debug
+   4. Barra de Navegação por Abas Principais
    -------------------------------------------------------------------------- */
-.debug-panel {
-    background-color: var(--debug-bg);
-    color: var(--debug-text);
-    border: 1px solid var(--debug-border);
-    border-radius: var(--radius-lg);
+.view-tabs-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 0.25rem;
+}
+
+.view-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: none;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.view-tab-btn:hover {
+    color: var(--accent-color);
+    background-color: var(--accent-light);
+}
+
+.view-tab-btn.active {
+    color: var(--accent-color);
+    background-color: #ffffff;
+    border-bottom: 3px solid var(--accent-color);
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.02);
+}
+
+/* --------------------------------------------------------------------------
+   5. Painel do Inspector do Pipeline (Aba 2)
+   -------------------------------------------------------------------------- */
+.inspector-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
     padding: 1.5rem;
-    box-shadow: var(--shadow-xl);
+    background-color: #f8fafc;
+}
+
+.inspector-header-box {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.inspector-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+
+}
+
+.inspector-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.inspector-steps-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Cards das Etapas do Inspector */
+.inspector-step-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-.debug-header {
+.step-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid var(--debug-border);
-    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.875rem;
 }
 
-.debug-title-wrapper {
+.step-title-wrapper {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    color: var(--debug-accent);
+    gap: 0.75rem;
 }
 
-.debug-title {
-    font-size: 1.1rem;
+.step-number-badge {
+    background-color: var(--accent-color);
+    color: #ffffff;
+    font-size: 0.85rem;
     font-weight: 700;
-    letter-spacing: -0.01em;
-}
-
-.debug-status-badge {
-    background-color: rgba(56, 189, 248, 0.15);
-    color: var(--debug-accent);
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
     text-transform: uppercase;
 }
 
-.debug-warnings-container {
+.step-title-text {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.step-metrics-pills {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.metric-pill {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-dark);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+}
+
+/* Blocos de Informação Detalhada por Etapa */
+.step-details-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.step-info-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.step-info-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 140px;
+}
+
+.step-info-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background-color: var(--bg-primary);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    word-break: break-all;
+}
+
+/* Tabela de Visualização Prévia de Dados no Inspector */
+.step-table-wrapper {
+    max-height: 260px;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: #ffffff;
+}
+
+.inspector-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.825rem;
+}
+
+.inspector-preview-table th {
+    position: sticky;
+    top: 0;
+    background-color: var(--sheet-header-bg);
+    color: var(--text-primary);
+    font-weight: 600;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 2px solid var(--border-dark);
+    border-right: 1px solid var(--border-color);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.inspector-preview-table td {
+    padding: 0.375rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+/* Tabela Comparativa da Etapa 6 (Match) */
+.match-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: left;
+}
+
+.match-table th {
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+    padding: 0.625rem 0.875rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.match-table td {
+    padding: 0.5rem 0.875rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.badge-match-yes {
+    background-color: #dcfce7;
+    color: #15803d;
+    border: 1px solid #86efac;
+    font-weight: 700;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+}
+
+.badge-match-no {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+    font-weight: 700;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+}
+
+/* Caixas de Explicação das Etapas 7, 8 e 9 */
+.renaming-explanation-box {
+    background-color: #fffbebf5;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    padding: 0.875rem 1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.equation-card-item {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
 }
 
-.debug-warning-card {
-    background-color: rgba(251, 191, 36, 0.1);
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    color: var(--debug-warning);
-    padding: 0.75rem 1rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.85rem;
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-}
-
-.debug-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 1.25rem;
-}
-
-.debug-card {
-    background-color: var(--debug-card-bg);
-    border: 1px solid var(--debug-border);
-    border-radius: var(--radius-md);
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-}
-
-.debug-card-title {
-    font-size: 0.85rem;
+.equation-category-title {
     font-weight: 700;
-    color: var(--debug-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--debug-border);
-    padding-bottom: 0.375rem;
+    color: var(--text-primary);
+    font-size: 0.95rem;
 }
 
-.debug-metric-list {
+.equation-line {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding-left: 0.75rem;
+}
+
+.equation-result-line {
+    font-weight: 700;
+    color: var(--summary-accent);
+    font-size: 1rem;
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.375rem;
+    margin-top: 0.25rem;
+}
+
+/* Painel da Linha do Tempo de Logs Cronológicos */
+.inspector-timeline-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    font-size: 0.825rem;
-    color: var(--debug-text);
+    gap: 1rem;
 }
 
-.debug-metric-item {
+.timeline-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
+    color: var(--accent-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.75rem;
 }
 
-.debug-metric-label {
-    color: var(--debug-muted);
+.timeline-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
-.debug-metric-value {
-    font-weight: 600;
-    color: #ffffff;
+.timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
 }
 
-.debug-log-box {
-    max-height: 140px;
-    overflow-y: auto;
-    font-size: 0.775rem;
-    background-color: rgba(0, 0, 0, 0.3);
-    border-radius: var(--radius-sm);
+.timeline-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.875rem;
     padding: 0.5rem 0.75rem;
-    line-height: 1.4;
-    color: #cbd5e1;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-primary);
+}
+
+.timeline-icon-success {
+    color: #16a34a;
+    font-weight: 800;
+}
+
+.timeline-icon-error {
+    color: #dc2626;
+    font-weight: 800;
 }
 
 /* --------------------------------------------------------------------------
-   5. Painel de Resumo Financeiro (Cards Elegantes)
+   6. Painel de Resumo Financeiro (Cards Elegantes)
    -------------------------------------------------------------------------- */
 .summary-container {
     padding: 1.25rem 1.5rem;
@@ -512,7 +722,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   6. Visualizador de Planilha Moderno (Estilo Excel / Google Sheets)
+   7. Visualizador de Planilha Moderno (Estilo Excel / Google Sheets)
    -------------------------------------------------------------------------- */
 .viewer-section {
     background-color: var(--bg-card);
@@ -683,7 +893,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   7. Modal de Seleção do Tipo de Planilha
+   8. Modal de Seleção do Tipo de Planilha
    -------------------------------------------------------------------------- */
 .modal-backdrop {
     position: fixed;
@@ -865,7 +1075,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   8. Responsividade
+   9. Responsividade
    -------------------------------------------------------------------------- */
 @media (max-width: 768px) {
     body {

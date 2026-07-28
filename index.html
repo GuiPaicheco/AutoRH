@@ -68,14 +68,14 @@
             </div>
         </section>
 
-        <!-- Painel de Diagnóstico (Modo Debug) -->
+        <!-- Painel de Diagnóstico (Modo Debug Secundário) -->
         <section class="debug-panel hidden" id="debugPanel">
             <div class="debug-header">
                 <div class="debug-title-wrapper">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 2v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <h3 class="debug-title">Painel de Diagnóstico (Modo Debug)</h3>
+                    <h3 class="debug-title">Painel de Diagnóstico Rápido</h3>
                 </div>
                 <span class="debug-status-badge">Ativo</span>
             </div>
@@ -84,14 +84,28 @@
             <div class="debug-warnings-container hidden" id="debugWarningsContainer"></div>
 
             <!-- Grid de Estatísticas e Métricas -->
-            <div class="debug-grid" id="debugGrid">
-                <!-- Preenchido via JavaScript -->
-            </div>
+            <div class="debug-grid" id="debugGrid"></div>
         </section>
 
-        <!-- Área de Visualização da Planilha Estilo Excel -->
+        <!-- Barra de Navegação por Abas Principais -->
+        <nav class="view-tabs-bar hidden" id="viewTabsBar">
+            <button type="button" class="view-tab-btn active" id="btnTabViewer">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>📊 Visualização da Planilha</span>
+            </button>
+            <button type="button" class="view-tab-btn" id="btnTabInspector">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span>🔍 Inspector do Pipeline</span>
+            </button>
+        </nav>
+
+        <!-- Área Principal de Conteúdo -->
         <main class="viewer-section">
-            <!-- Mensagem quando nenhum arquivo estiver carregado -->
+            <!-- Estado Vazio Geral -->
             <div class="empty-state" id="emptyState">
                 <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -99,23 +113,53 @@
                 <p class="empty-state-text">Nenhuma planilha carregada.</p>
             </div>
 
-            <!-- Painel de Resumo Financeiro -->
-            <div class="summary-container hidden" id="summaryContainer">
-                <div class="summary-header">
-                    <svg class="summary-header-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <h3 class="summary-title">Resumo Financeiro</h3>
+            <!-- CONTEÚDO DA ABA 1: VISUALIZAÇÃO PADRÃO DA PLANILHA -->
+            <div class="tab-content-container hidden" id="viewerTabContent">
+                <!-- Painel de Resumo Financeiro -->
+                <div class="summary-container hidden" id="summaryContainer">
+                    <div class="summary-header">
+                        <svg class="summary-header-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h3 class="summary-title">Resumo Financeiro</h3>
+                    </div>
+                    <div class="summary-grid" id="summaryGrid"></div>
                 </div>
-                <div class="summary-grid" id="summaryGrid"></div>
+
+                <!-- Contêiner da Tabela de Dados (Estilo Excel / Google Sheets) -->
+                <div class="table-wrapper hidden" id="tableWrapper">
+                    <table class="excel-table" id="excelTable">
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- Contêiner da Tabela de Dados (Estilo Excel / Google Sheets) -->
-            <div class="table-wrapper hidden" id="tableWrapper">
-                <table class="excel-table" id="excelTable">
-                    <thead id="tableHead"></thead>
-                    <tbody id="tableBody"></tbody>
-                </table>
+            <!-- CONTEÚDO DA ABA 2: 🔍 INSPECTOR DO PIPELINE -->
+            <div class="tab-content-container hidden" id="inspectorTabContent">
+                <div class="inspector-wrapper">
+                    <!-- Cabeçalho do Inspector -->
+                    <div class="inspector-header-box">
+                        <div class="inspector-header-info">
+                            <h2 class="inspector-title">🔍 Inspector do Pipeline de Processamento</h2>
+                            <p class="inspector-subtitle">Acompanhe visualmente o estado exato da planilha em cada uma das 9 etapas de tratamento.</p>
+                        </div>
+                    </div>
+
+                    <!-- Contêiner dos Cards das 9 Etapas -->
+                    <div class="inspector-steps-container" id="inspectorStepsContainer"></div>
+
+                    <!-- Painel de Log Cronológico da Linha do Tempo -->
+                    <div class="inspector-timeline-card">
+                        <div class="timeline-header">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <h3 class="timeline-title">Log Cronológico de Operações</h3>
+                        </div>
+                        <div class="timeline-list" id="inspectorLogTimeline"></div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>

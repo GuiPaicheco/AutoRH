@@ -1,0 +1,14 @@
+TITULO REAL DO SIGA,,,,,,,,,,,,,,,,,,,,
+"SUBTITULO COM QUEBRA DE LINHA
+",,,,,,,,,,,,,,,,,,,,
+GERADO EM 2026,,,,,,,,,,,,,,,,,,,,
+Matrícula  ,," Nome Aluno
+",Curso,,Situação,Obs G,Obs H,Obs I,Obs J," com_incp_agente 
+",  COM_INCP_COMISSIONADO  ,"com_incp_temporario
+",Com_Incp_Estagiario,COM_INCP_ESTATUTARIO,sem_incp_agente,SEM_INCP_COMISSIONADO,sem_incp_temporario,sem_incp_estagiario,SEM_INCP_ESTATUTARIO,"  hora extra
+"
+2026001,,João da Silva,Engenharia,,Ativo,g1,h1,i1,j1,"R$ 4.500,50","3.200,00","2.800,00","1.200,00","R$ 8.500,00","650,00","400,00","300,00","200,00","900,00","R$ 450,50"
+2026002,,Maria Santos,Computação,,Ativo,g2,h2,i2,j2,"R$ 5.100,00","3.500,00","2.900,00","1.300,00","R$ 8.900,00","700,00","450,00","350,00","250,00","950,00","520,00"
+2026003,,Pedro Souza,Sistemas,,Trancado,g3,h3,i3,j3,4800.00,"R$ 3.000,00",2500,1100,8000,600,380,280,180,850,"-100,00"
+RODAPE REAL 1,,,,,,,,,,,,,,,,,,,,
+RODAPE REAL 2,,,,,,,,,,,,,,,,,,,,
