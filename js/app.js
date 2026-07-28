@@ -1,22 +1,25 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Arquitetura Dual-Pipeline: SIGA + Relatório)
+ * Importador de Planilhas - app.js (Wizard 4 Etapas & Sessão Unificada)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) com dois pipelines
- * de tratamento 100% independentes:
- * - Pipeline 1: Planilha do SIGA (Com regras automáticas de tratamento)
- * - Pipeline 2: Planilha de Relatório (Visualização fiel sem transformações)
+ * Aplicação estática em JavaScript Puro (Vanilla JS) reestruturada para um
+ * fluxo operacional guiado por etapas (Wizard):
+ * - PASSO 1: ① Relatório (Importação do Relatório e criação da Sessão)
+ * - PASSO 2: ② SIGA (Importação do SIGA e aplicação das regras de tratamento)
+ * - PASSO 3: ③ Processamento (Preparado para futuro cruzamento no FinalProcessor)
+ * - PASSO 4: ④ Resultado (Preparado para relatório final unificado)
  * 
  * Arquitetura em Módulos:
  * 1. Mapeamento & Configurações (Central Config, Header Normalization & Number Utilities)
- * 2. Módulo Inspetor do Pipeline (Pipeline Inspector Engine - 9 Etapas SIGA / 1 Etapa Relatório)
- * 3. Módulo de Diagnóstico Rápido (Debug & Diagnostic Engine)
- * 4. Motor de Regras & Pipelines Independentes (Treatment Pipeline Engine)
- * 5. Módulo do Resumo Financeiro (Financial Summary Engine)
- * 6. Gerenciamento do Modal (Modal Controller)
- * 7. Interface & Navegação por Abas (UI & Tab Controller)
- * 8. Leitura de Arquivo (Spreadsheet Reader)
- * 9. Renderizador da Tabela & Inspector (Render Controller)
+ * 2. Módulo de Gerenciamento da Sessão (Session Engine - appSession)
+ * 3. Módulo Stub do Processador Final (FinalProcessor Stub Engine)
+ * 4. Módulo Inspetor do Pipeline (Pipeline Inspector Engine)
+ * 5. Módulo de Diagnóstico Rápido (Debug & Diagnostic Engine)
+ * 6. Motor de Regras & Pipelines (Treatment Pipeline Engine)
+ * 7. Módulo do Resumo Financeiro (Financial Summary Engine)
+ * 8. Gerenciador do Wizard de 4 Etapas (Wizard Controller)
+ * 9. Interface & Navegação por Abas (UI & Tab Controller)
+ * 10. Leitura de Arquivo & Renderização (Spreadsheet Reader & Table Renderer)
  * ============================================================================
  */
 
@@ -26,13 +29,37 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
     const fileInput = document.getElementById('fileInput');
     const dropZone = document.getElementById('dropZone');
+    const dropZonePrompt = document.getElementById('dropZonePrompt');
+    const btnChooseFileLabel = document.getElementById('btnChooseFileLabel');
     const fileInfoCard = document.getElementById('fileInfoCard');
     const fileNameText = document.getElementById('fileNameText');
     const btnRemoveFile = document.getElementById('btnRemoveFile');
+
     const emptyState = document.getElementById('emptyState');
     const tableWrapper = document.getElementById('tableWrapper');
     const tableHead = document.getElementById('tableHead');
     const tableBody = document.getElementById('tableBody');
+
+    // Wizard Stepper (4 Etapas)
+    const stepItemReport = document.getElementById('stepItemReport');
+    const stepItemSiga = document.getElementById('stepItemSiga');
+    const stepItemProcess = document.getElementById('stepItemProcess');
+    const stepItemResult = document.getElementById('stepItemResult');
+
+    const stepStatusReport = document.getElementById('stepStatusReport');
+    const stepStatusSiga = document.getElementById('stepStatusSiga');
+    const connector1 = document.getElementById('connector1');
+
+    // Sessão Ativa
+    const sessionInfoCard = document.getElementById('sessionInfoCard');
+    const sessionUnitName = document.getElementById('sessionUnitName');
+    const sessionReportFile = document.getElementById('sessionReportFile');
+    const sessionSigaFile = document.getElementById('sessionSigaFile');
+    const sessionTimestamp = document.getElementById('sessionTimestamp');
+    const sessionStatusTag = document.getElementById('sessionStatusTag');
+    const sessionSheetSelector = document.getElementById('sessionSheetSelector');
+    const btnViewReportSheet = document.getElementById('btnViewReportSheet');
+    const btnViewSigaSheet = document.getElementById('btnViewSigaSheet');
 
     // Abas de Navegação
     const viewTabsBar = document.getElementById('viewTabsBar');
@@ -44,6 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Elementos do Inspector do Pipeline
     const inspectorStepsContainer = document.getElementById('inspectorStepsContainer');
     const inspectorLogTimeline = document.getElementById('inspectorLogTimeline');
+    const inspectorSheetTitle = document.getElementById('inspectorSheetTitle');
+    const inspectorSheetSubtitle = document.getElementById('inspectorSheetSubtitle');
 
     // Elementos do Resumo Financeiro
     const summaryContainer = document.getElementById('summaryContainer');
@@ -55,31 +84,65 @@ document.addEventListener('DOMContentLoaded', () => {
     const debugGrid = document.getElementById('debugGrid');
     const debugWarningsContainer = document.getElementById('debugWarningsContainer');
 
-    // Elementos do Modal
-    const typeSelectionModal = document.getElementById('typeSelectionModal');
-    const modalCloseBtn = document.getElementById('modalCloseBtn');
-    const btnOptionRelatorio = document.getElementById('btnOptionRelatorio');
-    const btnOptionSiga = document.getElementById('btnOptionSiga');
-    const modalAlert = document.getElementById('modalAlert');
-    const modalAlertText = document.getElementById('modalAlertText');
-
-    // Estado da Aplicação
+    // Estado Geral da Aplicação
     const appState = {
-        currentFile: null,
-        rawMatrixData: [],
-        treatedMatrixData: [],
-        selectedCell: null,
-        selectedType: null,
-        summaryData: {},
+        currentStep: 1, // 1: Relatório | 2: SIGA | 3: Processamento | 4: Resultado
         isDebugMode: false,
         activeTab: 'viewer'
     };
 
-    // Objeto do Inspetor do Pipeline (Inspector State)
-    const inspectorData = {
-        steps: [],
-        timelineLogs: []
+    // ------------------------------------------------------------------------
+    // 1. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
+    // ------------------------------------------------------------------------
+
+    /**
+     * GERENCIADOR DE ESTADO DA SESSÃO ATIVA (appSession)
+     * Mantém os dados processados e disponíveis para todas as etapas.
+     */
+    const appSession = {
+        isActive: false,
+        unitName: 'Não identificada',
+        reportFile: null,
+        sigaFile: null,
+        timestamp: null,
+        status: 'Aguardando Relatório', // 'Aguardando Relatório' | 'Relatório Carregado' | 'SIGA Carregado' | 'Pronto para Processamento'
+        reportMatrix: [],
+        sigaMatrix: [],
+        reportInspector: { steps: [], timelineLogs: [] },
+        sigaInspector: { steps: [], timelineLogs: [] },
+        sigaSummaryData: {},
+        activeViewSheet: 'report' // 'report' ou 'siga'
     };
+
+    /**
+     * MÓDULO STUB: PROCESSADOR FINAL (FinalProcessor)
+     * Módulo preparado para receber futuramente os dados tratados de ambas as planilhas.
+     */
+    const FinalProcessor = {
+        isReady: false,
+        reportData: null,
+        sigaData: null,
+
+        process(sessionObj) {
+            console.log("%c[FinalProcessor] Módulo preparado para cruzamento futuro das planilhas tratadas.", "color: #059669; font-weight: bold; font-size: 13px;");
+            if (!sessionObj || !sessionObj.reportMatrix.length || !sessionObj.sigaMatrix.length) {
+                this.isReady = false;
+                return null;
+            }
+            this.isReady = true;
+            this.reportData = sessionObj.reportMatrix;
+            this.sigaData = sessionObj.sigaMatrix;
+            return {
+                status: 'Pronto para Processamento Conjunto',
+                reportRows: this.reportData.length,
+                sigaRows: this.sigaData.length
+            };
+        }
+    };
+
+    // Inspector State Context
+    let currentInspectorSteps = [];
+    let currentInspectorTimelineLogs = [];
 
     // Estado de Diagnóstico Secundário (Debug Context)
     const debugContext = {
@@ -97,17 +160,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 1. MAPEAMENTO & CONFIGURAÇÕES (Central Config & Utilities)
+    // 2. CONFIGURAÇÕES CENTRALIZADAS DE TRATAMENTO
     // ------------------------------------------------------------------------
 
-    /**
-     * CONFIGURAÇÃO CENTRALIZADA: Quantidade de linhas iniciais a remover do topo no SIGA.
-     */
     const LINHAS_INICIAIS_REMOVIDAS = 4;
 
-    /**
-     * Tabela Oficial de Padronização de Nomes das Colunas do SIGA (Regra 5).
-     */
     const COLUMN_NAME_MAP = {
         'COM_INCP_AGENTES': 'Remuneração a Pessoal Estatutário (ACS)',
         'COM_INCP_COMISSIONADO': 'Remuneração a Pessoal - CLT',
@@ -122,10 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'HORA_EXTRA': 'Hora Extra'
     };
 
-    /**
-     * Normaliza nomes de cabeçalhos eliminando variações de digitação, espaços extras,
-     * caracteres invisíveis (\r, \n, \t, \u00A0), e convertendo para CAIXA ALTA.
-     */
     function normalizeHeaderName(header) {
         if (header === null || header === undefined) return '';
         let str = String(header);
@@ -188,16 +241,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 2. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 3. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
-        inspectorData.steps = [];
-        inspectorData.timelineLogs = [];
+        currentInspectorSteps = [];
+        currentInspectorTimelineLogs = [];
     }
 
     function addInspectorLog(message, isSuccess = true, details = '') {
-        inspectorData.timelineLogs.push({
+        currentInspectorTimelineLogs.push({
             timestamp: new Date().toLocaleTimeString(),
             message,
             isSuccess,
@@ -238,17 +291,17 @@ document.addEventListener('DOMContentLoaded', () => {
             extraInfo
         };
 
-        inspectorData.steps[stepNum - 1] = snapshot;
+        currentInspectorSteps[stepNum - 1] = snapshot;
     }
 
     function renderInspectorUI() {
         inspectorStepsContainer.innerHTML = '';
         inspectorLogTimeline.innerHTML = '';
 
-        if (inspectorData.steps.length === 0) {
+        if (currentInspectorSteps.length === 0) {
             inspectorStepsContainer.innerHTML = `
                 <div class="empty-state">
-                    <p class="empty-state-text">Nenhuma planilha foi processada no Inspector ainda.</p>
+                    <p class="empty-state-text">Nenhum dado inspecionado nesta etapa ainda.</p>
                 </div>
             `;
             return;
@@ -256,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fragment = document.createDocumentFragment();
 
-        inspectorData.steps.forEach(step => {
+        currentInspectorSteps.forEach(step => {
             if (!step) return;
 
             const card = document.createElement('div');
@@ -293,7 +346,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // Informações Adicionais para Etapa 1 do Relatório
             if (step.stepNum === 1 && step.extraInfo.fileName) {
                 detailsBlock.innerHTML += `
                     <div class="step-info-row">
@@ -421,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const logFragment = document.createDocumentFragment();
 
-        inspectorData.timelineLogs.forEach(log => {
+        currentInspectorTimelineLogs.forEach(log => {
             const item = document.createElement('div');
             item.className = 'timeline-item';
 
@@ -473,7 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 3. MÓDULO DE DIAGNÓSTICO RÁPIDO (Debug & Diagnostic Engine)
+    // 4. MÓDULO DE DIAGNÓSTICO RÁPIDO (Debug & Diagnostic Engine)
     // ------------------------------------------------------------------------
 
     function resetDebugContext() {
@@ -524,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="debug-metric-list">
                 <div class="debug-metric-item"><span class="debug-metric-label">Linhas Brutas:</span><span class="debug-metric-value">${debugContext.rawRowsCount}</span></div>
                 <div class="debug-metric-item"><span class="debug-metric-label">Colunas Brutas:</span><span class="debug-metric-value">${debugContext.rawColsCount}</span></div>
-                <div class="debug-metric-item"><span class="debug-metric-label">Arquivo:</span><span class="debug-metric-value">${appState.currentFile ? appState.currentFile.name : 'Nenhum'}</span></div>
+                <div class="debug-metric-item"><span class="debug-metric-label">Sessão Ativa:</span><span class="debug-metric-value">${appSession.unitName}</span></div>
             </div>
         `;
 
@@ -534,14 +586,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return `<div><strong>Coluna ${item.letter}:</strong> "${item.original}" ➔ <code>"${item.normalized}"</code></div>`;
         }).join('');
         cardHeaders.innerHTML = `
-            <div class="debug-card-title">2. Cabeçalhos da 1ª Linha (Pós-Passo 4)</div>
+            <div class="debug-card-title">2. Cabeçalhos da 1ª Linha (Pós-Passo 4 SIGA)</div>
             <div class="debug-log-box">${normItems || 'Nenhum cabeçalho identificado'}</div>
         `;
 
         const cardRemovals = document.createElement('div');
         cardRemovals.className = 'debug-card';
         cardRemovals.innerHTML = `
-            <div class="debug-card-title">3. Remoções do Pipeline</div>
+            <div class="debug-card-title">3. Remoções do Pipeline SIGA</div>
             <div class="debug-metric-list">
                 <div class="debug-metric-item"><span class="debug-metric-label">Linhas do Topo Removidas:</span><span class="debug-metric-value">${debugContext.removedTopRowsCount}</span></div>
                 <div class="debug-metric-item"><span class="debug-metric-label">Linhas do Rodapé Removidas:</span><span class="debug-metric-value">${debugContext.removedBottomRowsCount}</span></div>
@@ -554,7 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cardRenames.className = 'debug-card';
         const renameLogs = debugContext.renamedColsLog.map(item => `<div>• Coluna ${item.letter}: <code>"${item.original}"</code> ➔ <strong>${item.renamed}</strong></div>`).join('');
         cardRenames.innerHTML = `
-            <div class="debug-card-title">4. Renomeação da 1ª Linha</div>
+            <div class="debug-card-title">4. Renomeação da 1ª Linha SIGA</div>
             <div class="debug-log-box">${renameLogs || 'Nenhuma coluna renomeada'}</div>
         `;
 
@@ -564,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return `<div class="debug-metric-item"><span class="debug-metric-label">${cat}:</span><span class="debug-metric-value">${formatBRL(debugContext.categoryTotals[cat])}</span></div>`;
         }).join('');
         cardTotals.innerHTML = `
-            <div class="debug-card-title">5. Totais Calculados</div>
+            <div class="debug-card-title">5. Totais Calculados SIGA</div>
             <div class="debug-metric-list">${totalItems || 'Nenhum total calculado'}</div>
         `;
 
@@ -576,7 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 4. MOTOR DE REGRAS & PIPELINES INDEPENDENTES (Treatment Pipeline Engine)
+    // 5. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -803,21 +855,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return updatedMatrix;
     }
 
-    /**
-     * Dicionário dos Pipelines de Tratamento da Aplicação.
-     * PIPELINE 1: Planilha do SIGA (Com transformações automáticas)
-     * PIPELINE 2: Planilha de Relatório (Visualização fiel sem transformações)
-     */
     const SPREADSHEET_PIPELINES = {
         siga: [
-            (matrix) => removeTopRowsRule(matrix, LINHAS_INICIAIS_REMOVIDAS),                // 1. ETAPA 2
-            (matrix) => removeEmptyColumnsRule(matrix),                                       // 2. ETAPA 3
-            (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // 3. ETAPA 4
-            (matrix) => removeBottomRowsRule(matrix, 2),                                      // 4. ETAPA 5
-            (matrix) => inspectAndLogOfficialHeaders(matrix),                                // Inspeção de Cabeçalho
-            (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)                   // 5. ETAPAS 6 & 7
+            (matrix) => removeTopRowsRule(matrix, LINHAS_INICIAIS_REMOVIDAS),
+            (matrix) => removeEmptyColumnsRule(matrix),
+            (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']),
+            (matrix) => removeBottomRowsRule(matrix, 2),
+            (matrix) => inspectAndLogOfficialHeaders(matrix),
+            (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)
         ],
-        relatorio: [] // Nenhuma transformação aplicada ao Relatório
+        relatorio: []
     };
 
     function runTreatmentPipeline(sheetType, rawMatrix) {
@@ -829,7 +876,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 5. MÓDULO DO RESUMO FINANCEIRO (Financial Summary Engine)
+    // 6. MÓDULO DO RESUMO FINANCEIRO (SIGA)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -940,86 +987,167 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
+    // 7. GERENCIADOR DO WIZARD DE 4 ETAPAS & SESSÃO UNIFICADA
     // ------------------------------------------------------------------------
 
-    function openTypeModal() {
-        hideModalAlert();
-        typeSelectionModal.classList.remove('hidden');
+    function updateWizardUI() {
+        if (appState.currentStep === 1) {
+            stepItemReport.className = 'wizard-step-item active';
+            stepStatusReport.className = 'step-status-badge badge-active';
+            stepStatusReport.textContent = 'Passo Atual';
+
+            stepItemSiga.className = 'wizard-step-item disabled';
+            stepStatusSiga.className = 'step-status-badge badge-disabled';
+            stepStatusSiga.textContent = 'Aguardando Relatório';
+
+            connector1.classList.remove('completed');
+
+            dropZonePrompt.textContent = 'Arraste e solte a Planilha de Relatório aqui ou';
+            btnChooseFileLabel.textContent = 'Escolher Planilha de Relatório';
+        } else if (appState.currentStep === 2) {
+            stepItemReport.className = 'wizard-step-item completed';
+            stepStatusReport.className = 'step-status-badge badge-completed';
+            stepStatusReport.textContent = '✔ Concluído';
+
+            stepItemSiga.className = 'wizard-step-item active';
+            stepStatusSiga.className = 'step-status-badge badge-active';
+            stepStatusSiga.textContent = 'Passo Atual';
+
+            connector1.classList.add('completed');
+
+            dropZonePrompt.textContent = 'Arraste e solte a Planilha do SIGA aqui ou';
+            btnChooseFileLabel.textContent = 'Escolher Planilha do SIGA';
+        } else if (appState.currentStep >= 3) {
+            stepItemReport.className = 'wizard-step-item completed';
+            stepStatusReport.className = 'step-status-badge badge-completed';
+            stepStatusReport.textContent = '✔ Concluído';
+
+            stepItemSiga.className = 'wizard-step-item completed';
+            stepStatusSiga.className = 'step-status-badge badge-completed';
+            stepStatusSiga.textContent = '✔ Concluído';
+
+            connector1.classList.add('completed');
+
+            stepItemProcess.className = 'wizard-step-item active';
+        }
     }
 
-    function closeTypeModal() {
-        typeSelectionModal.classList.add('hidden');
-        hideModalAlert();
-    }
+    function updateSessionCardUI() {
+        if (!appSession.isActive) {
+            sessionInfoCard.classList.add('hidden');
+            return;
+        }
 
-    function showModalAlert(message) {
-        modalAlertText.textContent = message;
-        modalAlert.classList.remove('hidden');
-    }
+        sessionInfoCard.classList.remove('hidden');
+        sessionUnitName.textContent = appSession.unitName;
+        sessionReportFile.textContent = appSession.reportFile ? appSession.reportFile.name : 'Não carregado';
+        sessionSigaFile.textContent = appSession.sigaFile ? appSession.sigaFile.name : 'Não carregado';
+        sessionTimestamp.textContent = appSession.timestamp || '-';
+        sessionStatusTag.textContent = appSession.status;
 
-    function hideModalAlert() {
-        modalAlert.classList.add('hidden');
+        if (appSession.reportMatrix.length > 0 && appSession.sigaMatrix.length > 0) {
+            sessionSheetSelector.classList.remove('hidden');
+        } else {
+            sessionSheetSelector.classList.add('hidden');
+        }
     }
 
     /**
-     * FLUXO PIPELINE 2: Planilha de Relatório.
-     * Importação e exibição fiel dos dados sem qualquer transformação.
+     * PROCESSA A ETAPA 1 DO WIZARD: Importar Relatório
      */
-    function handleSelectRelatorio() {
-        appState.selectedType = 'relatorio';
-        closeTypeModal();
-
+    function processReportStep(file, rawMatrix) {
         resetInspectorData();
 
-        const rawMatrix = appState.rawMatrixData || [];
-        appState.treatedMatrixData = rawMatrix;
+        // Extrai Unidade de Saúde da Célula A2 (Linha 2, Coluna A da matriz bruta)
+        let extractedUnit = 'Unidade de Saúde';
+        if (rawMatrix && rawMatrix.length > 1 && rawMatrix[1][0]) {
+            const rawA2 = String(rawMatrix[1][0]).trim();
+            if (rawA2 !== '') {
+                extractedUnit = rawA2;
+            }
+        }
 
-        const fileName = appState.currentFile ? appState.currentFile.name : 'Arquivo';
-        const fileExt = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')).toLowerCase() : '';
+        // Inicializa a Sessão Ativa
+        appSession.isActive = true;
+        appSession.unitName = extractedUnit;
+        appSession.reportFile = file;
+        appSession.timestamp = new Date().toLocaleTimeString();
+        appSession.status = 'Relatório Carregado';
+        appSession.reportMatrix = rawMatrix;
 
-        // ETAPA 1 do Inspector: Dados Brutos do Relatório
+        const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
+
         recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
-            fileName: fileName,
+            fileName: file.name,
             fileType: fileExt
         });
 
-        // Logs Cronológicos Estritos da Planilha de Relatório
-        addInspectorLog("✔ Arquivo importado.");
+        addInspectorLog("✔ Arquivo do Relatório importado.");
+        addInspectorLog(`✔ Unidade de Saúde identificada na célula A2: "${extractedUnit}".`);
         addInspectorLog("✔ Pipeline da Planilha de Relatório iniciado.");
-        addInspectorLog("✔ Nenhuma transformação aplicada.");
-        addInspectorLog("✔ Visualização concluída.");
+        addInspectorLog("✔ Nenhuma transformação aplicada ao Relatório.");
+        addInspectorLog("✔ Visualização do Relatório concluída.");
 
-        // Oculta o resumo financeiro (já que não há cálculos de totais)
+        appSession.reportInspector = {
+            steps: [...currentInspectorSteps],
+            timelineLogs: [...currentInspectorTimelineLogs]
+        };
+
+        // Avança o Wizard para a Etapa 2 (SIGA)
+        appState.currentStep = 2;
+        appSession.activeViewSheet = 'report';
+
+        updateWizardUI();
+        updateSessionCardUI();
+
         summaryContainer.classList.add('hidden');
-
-        // Renderiza a tabela fiel, o painel de diagnóstico e o Inspector
         renderSpreadsheetTable(rawMatrix);
         renderDebugPanel();
         renderInspectorUI();
 
-        // Exibe a barra de abas de navegação
         viewTabsBar.classList.remove('hidden');
     }
 
     /**
-     * FLUXO PIPELINE 1: Planilha do SIGA.
-     * Tratamento completo de 5 passos + resumo financeiro.
+     * PROCESSA A ETAPA 2 DO WIZARD: Importar SIGA
      */
-    function handleSelectSiga() {
-        appState.selectedType = 'siga';
-        closeTypeModal();
-
+    function processSigaStep(file, rawMatrix) {
         resetInspectorData();
 
-        recordStepSnapshot(1, "Planilha original importada", appState.rawMatrixData);
-        addInspectorLog("✔ Arquivo lido e carregado com sucesso pelo SheetJS.");
+        recordStepSnapshot(1, "Planilha original importada", rawMatrix);
+        addInspectorLog("✔ Arquivo do SIGA lido e carregado com sucesso pelo SheetJS.");
 
-        const treated = runTreatmentPipeline('siga', appState.rawMatrixData);
-        appState.treatedMatrixData = treated;
+        // Executa todas as regras de tratamento do SIGA (4 linhas topo, colunas vazias, J/I/H/G/A, rodapé, padronização)
+        const treated = runTreatmentPipeline('siga', rawMatrix);
+        appSession.sigaMatrix = treated;
 
+        // Calcula o Resumo Financeiro BRL
         const summaryData = calculateFinancialSummary(treated);
-        appState.summaryData = summaryData;
+        appSession.sigaSummaryData = summaryData;
+        appSession.sigaFile = file;
+        appSession.timestamp = new Date().toLocaleTimeString();
+        appSession.status = 'Pronto para Processamento';
+
+        appSession.sigaInspector = {
+            steps: [...currentInspectorSteps],
+            timelineLogs: [...currentInspectorTimelineLogs]
+        };
+
+        // Prepara o Módulo Stub FinalProcessor
+        FinalProcessor.process(appSession);
+
+        // Avança o Wizard para a Etapa 3 (Processamento)
+        appState.currentStep = 3;
+        appSession.activeViewSheet = 'siga';
+
+        updateWizardUI();
+        updateSessionCardUI();
+
+        btnViewReportSheet.classList.remove('active');
+        btnViewSigaSheet.classList.add('active');
+
+        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do SIGA)";
+        inspectorSheetSubtitle.textContent = "Acompanhe visualmente o estado exato da planilha do SIGA nas 9 etapas de tratamento.";
 
         renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
@@ -1030,7 +1158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 7. INTERFACE & NAVEGAÇÃO POR ABAS (UI & Tab Controller)
+    // 8. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function initTabNavigation() {
@@ -1049,6 +1177,38 @@ document.addEventListener('DOMContentLoaded', () => {
             inspectorTabContent.classList.remove('hidden');
             viewerTabContent.classList.add('hidden');
         });
+
+        btnViewReportSheet.addEventListener('click', () => {
+            btnViewReportSheet.classList.add('active');
+            btnViewSigaSheet.classList.remove('active');
+            appSession.activeViewSheet = 'report';
+
+            currentInspectorSteps = appSession.reportInspector.steps;
+            currentInspectorTimelineLogs = appSession.reportInspector.timelineLogs;
+
+            inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha de Relatório)";
+            inspectorSheetSubtitle.textContent = "Visualização fiel do arquivo de relatório importado.";
+
+            summaryContainer.classList.add('hidden');
+            renderSpreadsheetTable(appSession.reportMatrix);
+            renderInspectorUI();
+        });
+
+        btnViewSigaSheet.addEventListener('click', () => {
+            btnViewSigaSheet.classList.add('active');
+            btnViewReportSheet.classList.remove('active');
+            appSession.activeViewSheet = 'siga';
+
+            currentInspectorSteps = appSession.sigaInspector.steps;
+            currentInspectorTimelineLogs = appSession.sigaInspector.timelineLogs;
+
+            inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Planilha do SIGA)";
+            inspectorSheetSubtitle.textContent = "Acompanhe visualmente o estado exato da planilha do SIGA nas 9 etapas de tratamento.";
+
+            renderFinancialSummaryCards(appSession.sigaSummaryData);
+            renderSpreadsheetTable(appSession.sigaMatrix);
+            renderInspectorUI();
+        });
     }
 
     function initEvents() {
@@ -1064,16 +1224,6 @@ document.addEventListener('DOMContentLoaded', () => {
             btnToggleDebug.classList.toggle('active', appState.isDebugMode);
             renderDebugPanel();
         });
-
-        modalCloseBtn.addEventListener('click', () => {
-            closeTypeModal();
-            if (appState.treatedMatrixData.length === 0) {
-                resetView();
-            }
-        });
-
-        btnOptionRelatorio.addEventListener('click', handleSelectRelatorio);
-        btnOptionSiga.addEventListener('click', handleSelectSiga);
 
         initTabNavigation();
     }
@@ -1117,11 +1267,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isValid) {
             alert('Formato não suportado. Selecione um arquivo .xlsx, .xls, .csv, .tsv ou .ods.');
-            resetView();
             return;
         }
 
-        appState.currentFile = file;
         showFileName(file.name);
         readSpreadsheetFile(file);
     }
@@ -1135,13 +1283,17 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
         fileNameText.textContent = 'Nenhum arquivo';
         fileInfoCard.classList.add('hidden');
-        
-        appState.currentFile = null;
-        appState.rawMatrixData = [];
-        appState.treatedMatrixData = [];
-        appState.selectedCell = null;
-        appState.selectedType = null;
-        appState.summaryData = {};
+
+        appState.currentStep = 1;
+        appSession.isActive = false;
+        appSession.unitName = 'Não identificada';
+        appSession.reportFile = null;
+        appSession.sigaFile = null;
+        appSession.timestamp = null;
+        appSession.status = 'Aguardando Relatório';
+        appSession.reportMatrix = [];
+        appSession.sigaMatrix = [];
+        appSession.sigaSummaryData = {};
 
         resetDebugContext();
         resetInspectorData();
@@ -1151,6 +1303,9 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryGrid.innerHTML = '';
         inspectorStepsContainer.innerHTML = '';
         inspectorLogTimeline.innerHTML = '';
+
+        updateWizardUI();
+        updateSessionCardUI();
 
         viewTabsBar.classList.add('hidden');
         summaryContainer.classList.add('hidden');
@@ -1164,11 +1319,10 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorTabContent.classList.add('hidden');
 
         emptyState.classList.remove('hidden');
-        closeTypeModal();
     }
 
     // ------------------------------------------------------------------------
-    // 8. LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 9. LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -1188,25 +1342,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (rawMatrix && rawMatrix.length > 0) {
-                    resetDebugContext();
-                    resetInspectorData();
-
-                    appState.rawMatrixData = rawMatrix;
-
                     debugContext.rawRowsCount = rawMatrix.length;
                     let maxCols = 0;
                     rawMatrix.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
                     debugContext.rawColsCount = maxCols;
 
-                    openTypeModal();
+                    // Encaminha a planilha para a etapa correspondente do Wizard
+                    if (appState.currentStep === 1) {
+                        processReportStep(file, rawMatrix);
+                    } else if (appState.currentStep === 2) {
+                        processSigaStep(file, rawMatrix);
+                    }
                 } else {
                     alert('A planilha selecionada não possui dados.');
-                    resetView();
                 }
             } catch (error) {
                 console.error('Erro ao ler a planilha:', error);
                 alert('Não foi possível ler o arquivo. Certifique-se de que o arquivo não está corrompido.');
-                resetView();
             }
         };
 
@@ -1214,7 +1366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 10. RENDERIZAÇÃO DA TABELA (Table Renderer)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -1223,7 +1375,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!matrix || matrix.length === 0) {
             alert('A planilha não possui dados a exibir.');
-            resetView();
             return;
         }
 

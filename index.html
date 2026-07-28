@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Importador de Planilhas</title>
+    <title>Importador de Planilhas - Fluxo Operacional</title>
     
     <!-- Fonte Google Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,40 +30,123 @@
                     <span>Modo Debug</span>
                 </button>
             </div>
-            <p class="app-subtitle">Selecione um arquivo Excel, CSV, TSV ou ODS para visualizar seus dados.</p>
+            <p class="app-subtitle">Fluxo operacional unificado: Importação do Relatório e do SIGA em etapas guiadas.</p>
         </header>
 
-        <!-- Seção de Importação de Arquivo -->
+        <!-- ASSISTENTE DE ETAPAS (WIZARD STEPPER - 4 ETAPAS) -->
+        <section class="wizard-section">
+            <div class="wizard-stepper">
+                <!-- ETAPA 1: Relatório -->
+                <div class="wizard-step-item active" id="stepItemReport">
+                    <div class="step-circle">1</div>
+                    <div class="step-label-wrapper">
+                        <span class="step-title">① Relatório</span>
+                        <span class="step-status-badge badge-active" id="stepStatusReport">Passo Atual</span>
+                    </div>
+                </div>
+                <div class="step-connector" id="connector1"></div>
+
+                <!-- ETAPA 2: SIGA -->
+                <div class="wizard-step-item disabled" id="stepItemSiga">
+                    <div class="step-circle">2</div>
+                    <div class="step-label-wrapper">
+                        <span class="step-title">② SIGA</span>
+                        <span class="step-status-badge badge-pending" id="stepStatusSiga">Aguardando Relatório</span>
+                    </div>
+                </div>
+                <div class="step-connector" id="connector2"></div>
+
+                <!-- ETAPA 3: Processamento -->
+                <div class="wizard-step-item disabled" id="stepItemProcess">
+                    <div class="step-circle">3</div>
+                    <div class="step-label-wrapper">
+                        <span class="step-title">③ Processamento</span>
+                        <span class="step-status-badge badge-disabled">Em breve</span>
+                    </div>
+                </div>
+                <div class="step-connector" id="connector3"></div>
+
+                <!-- ETAPA 4: Resultado -->
+                <div class="wizard-step-item disabled" id="stepItemResult">
+                    <div class="step-circle">4</div>
+                    <div class="step-label-wrapper">
+                        <span class="step-title">④ Resultado</span>
+                        <span class="step-status-badge badge-disabled">Em breve</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PAINEL DA SESSÃO ATIVA -->
+        <section class="session-info-card hidden" id="sessionInfoCard">
+            <div class="session-header">
+                <div class="session-title-wrapper">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    <div class="session-unit-info">
+                        <span class="session-label">Unidade de Saúde (Sessão Ativa):</span>
+                        <h3 class="session-unit-name" id="sessionUnitName">Não identificada</h3>
+                    </div>
+                </div>
+                <span class="session-status-tag" id="sessionStatusTag">Sessão Iniciada</span>
+            </div>
+            
+            <div class="session-metrics-grid">
+                <div class="session-metric-item">
+                    <span class="session-metric-label">Arquivo de Relatório:</span>
+                    <span class="session-metric-val" id="sessionReportFile">Não carregado</span>
+                </div>
+                <div class="session-metric-item">
+                    <span class="session-metric-label">Arquivo do SIGA:</span>
+                    <span class="session-metric-val" id="sessionSigaFile">Não carregado</span>
+                </div>
+                <div class="session-metric-item">
+                    <span class="session-metric-label">Última Atualização:</span>
+                    <span class="session-metric-val" id="sessionTimestamp">-</span>
+                </div>
+            </div>
+
+            <!-- Alternador de Planilhas da Sessão na Tabela -->
+            <div class="session-sheet-selector hidden" id="sessionSheetSelector">
+                <span class="selector-label">Exibir na Tabela / Inspector:</span>
+                <div class="selector-btn-group">
+                    <button type="button" class="btn-sheet-toggle active" id="btnViewReportSheet">📄 Planilha de Relatório</button>
+                    <button type="button" class="btn-sheet-toggle" id="btnViewSigaSheet">📊 Planilha do SIGA</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção de Importação de Arquivo Conforme Etapa do Wizard -->
         <section class="upload-section">
             <div class="drop-zone" id="dropZone">
                 <div class="drop-zone-content">
                     <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <p class="drop-zone-text">Arraste e solte sua planilha aqui ou</p>
+                    <p class="drop-zone-text" id="dropZonePrompt">Arraste e solte a Planilha de Relatório aqui ou</p>
                     
-                    <!-- Botão Grande para Selecionar Arquivo -->
-                    <label for="fileInput" class="btn-primary">
-                        Escolher Arquivo
+                    <label for="fileInput" class="btn-primary" id="btnChooseFileLabel">
+                        Escolher Planilha de Relatório
                     </label>
                     <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .tsv, .ods" class="file-input-hidden">
                     <p class="supported-formats">Formatos suportados: .xlsx, .xls, .csv, .tsv, .ods</p>
                 </div>
             </div>
 
-            <!-- Área Exibindo o Nome do Arquivo Importado -->
+            <!-- Card do Arquivo Atual -->
             <div class="file-info-card hidden" id="fileInfoCard">
                 <div class="file-info-details">
                     <svg class="file-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <div class="file-text-wrapper">
-                        <span class="file-label">Arquivo selecionado:</span>
+                        <span class="file-label" id="fileCurrentLabel">Arquivo da Etapa:</span>
                         <span class="file-name" id="fileNameText">Nenhum arquivo</span>
                     </div>
                 </div>
-                <button type="button" class="btn-secondary" id="btnRemoveFile" title="Remover planilha">
-                    Remover
+                <button type="button" class="btn-secondary" id="btnRemoveFile" title="Reiniciar Sessão">
+                    Reiniciar Sessão
                 </button>
             </div>
         </section>
@@ -79,11 +162,7 @@
                 </div>
                 <span class="debug-status-badge">Ativo</span>
             </div>
-
-            <!-- Avisos e Alertas do Diagnóstico -->
             <div class="debug-warnings-container hidden" id="debugWarningsContainer"></div>
-
-            <!-- Grid de Estatísticas e Métricas -->
             <div class="debug-grid" id="debugGrid"></div>
         </section>
 
@@ -105,28 +184,25 @@
 
         <!-- Área Principal de Conteúdo -->
         <main class="viewer-section">
-            <!-- Estado Vazio Geral -->
             <div class="empty-state" id="emptyState">
                 <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <p class="empty-state-text">Nenhuma planilha carregada.</p>
+                <p class="empty-state-text">Importe a Planilha de Relatório na Etapa 1 para iniciar a sessão.</p>
             </div>
 
             <!-- CONTEÚDO DA ABA 1: VISUALIZAÇÃO PADRÃO DA PLANILHA -->
             <div class="tab-content-container hidden" id="viewerTabContent">
-                <!-- Painel de Resumo Financeiro -->
                 <div class="summary-container hidden" id="summaryContainer">
                     <div class="summary-header">
                         <svg class="summary-header-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <h3 class="summary-title">Resumo Financeiro</h3>
+                        <h3 class="summary-title">Resumo Financeiro (Planilha do SIGA)</h3>
                     </div>
                     <div class="summary-grid" id="summaryGrid"></div>
                 </div>
 
-                <!-- Contêiner da Tabela de Dados (Estilo Excel / Google Sheets) -->
                 <div class="table-wrapper hidden" id="tableWrapper">
                     <table class="excel-table" id="excelTable">
                         <thead id="tableHead"></thead>
@@ -138,18 +214,13 @@
             <!-- CONTEÚDO DA ABA 2: 🔍 INSPECTOR DO PIPELINE -->
             <div class="tab-content-container hidden" id="inspectorTabContent">
                 <div class="inspector-wrapper">
-                    <!-- Cabeçalho do Inspector -->
                     <div class="inspector-header-box">
                         <div class="inspector-header-info">
-                            <h2 class="inspector-title">🔍 Inspector do Pipeline de Processamento</h2>
-                            <p class="inspector-subtitle">Acompanhe visualmente o estado exato da planilha em cada uma das 9 etapas de tratamento.</p>
+                            <h2 class="inspector-title" id="inspectorSheetTitle">🔍 Inspector do Pipeline de Processamento</h2>
+                            <p class="inspector-subtitle" id="inspectorSheetSubtitle">Acompanhe visualmente o estado exato da planilha em cada etapa.</p>
                         </div>
                     </div>
-
-                    <!-- Contêiner dos Cards das 9 Etapas -->
                     <div class="inspector-steps-container" id="inspectorStepsContainer"></div>
-
-                    <!-- Painel de Log Cronológico da Linha do Tempo -->
                     <div class="inspector-timeline-card">
                         <div class="timeline-header">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -162,63 +233,6 @@
                 </div>
             </div>
         </main>
-    </div>
-
-    <!-- Modal de Seleção do Tipo de Planilha -->
-    <div class="modal-backdrop hidden" id="typeSelectionModal">
-        <div class="modal-card">
-            <button type="button" class="modal-close-btn" id="modalCloseBtn" title="Cancelar">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
-            
-            <div class="modal-header">
-                <div class="modal-icon-wrapper">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 2v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                </div>
-                <h2 class="modal-title">Qual o tipo desta planilha?</h2>
-                <p class="modal-subtitle">Selecione o fluxo de tratamento adequado para este arquivo.</p>
-            </div>
-
-            <div class="modal-body">
-                <!-- Opção 1: Planilha de Relatório -->
-                <button type="button" class="type-option-card" id="btnOptionRelatorio">
-                    <div class="option-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                    </div>
-                    <div class="option-info">
-                        <span class="option-title">Planilha de Relatório</span>
-                        <span class="option-desc">Fluxo geral para relatórios operacionais.</span>
-                    </div>
-                </button>
-
-                <!-- Opção 2: Planilha do SIGA -->
-                <button type="button" class="type-option-card" id="btnOptionSiga">
-                    <div class="option-icon option-icon-siga">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                        </svg>
-                    </div>
-                    <div class="option-info">
-                        <span class="option-title">Planilha do SIGA</span>
-                        <span class="option-desc">Aplica regras automáticas de limpeza do SIGA.</span>
-                    </div>
-                </button>
-            </div>
-
-            <!-- Toast/Mensagem de Fluxo Não Implementado -->
-            <div class="modal-alert hidden" id="modalAlert">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span id="modalAlertText">Este fluxo será implementado em uma versão futura.</span>
-            </div>
-        </div>
     </div>
 
     <!-- Scripts da Aplicação -->
