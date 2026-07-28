@@ -74,7 +74,7 @@
                     <div class="step-circle">4</div>
                     <div class="step-label-wrapper">
                         <span class="step-title">④ Processamento</span>
-                        <span class="step-status-badge badge-disabled">Em breve</span>
+                        <span class="step-status-badge badge-pending" id="stepStatusProcess">Aguardando Drive</span>
                     </div>
                 </div>
                 <div class="step-connector" id="connector4"></div>
@@ -84,7 +84,7 @@
                     <div class="step-circle">5</div>
                     <div class="step-label-wrapper">
                         <span class="step-title">⑤ Resultado</span>
-                        <span class="step-status-badge badge-disabled">Em breve</span>
+                        <span class="step-status-badge badge-pending" id="stepStatusResult">Aguardando Processamento</span>
                     </div>
                 </div>
             </div>
@@ -130,6 +130,7 @@
                     <button type="button" class="btn-sheet-toggle active" id="btnViewReportSheet">📄 Planilha de Relatório</button>
                     <button type="button" class="btn-sheet-toggle" id="btnViewSigaSheet">📊 Planilhas do SIGA</button>
                     <button type="button" class="btn-sheet-toggle" id="btnViewDriveSheet">📁 Planilha do Drive</button>
+                    <button type="button" class="btn-sheet-toggle btn-result-toggle" id="btnViewResultSheet">🎯 Resultado Final</button>
                 </div>
                 <button type="button" class="btn-secondary" id="btnRemoveFile" title="Reiniciar Sessão">
                     Reiniciar Sessão

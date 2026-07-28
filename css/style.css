@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Importador de Planilhas (Coleção Multiarquivos SIGA & Módulo Temporal)
+   Importador de Planilhas (Tela Resultado & Módulo Temporal)
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -173,7 +173,7 @@ body {
     align-items: center;
     gap: 0.5rem;
     flex: 1;
-    min-width: 140px;
+    min-width: 130px;
     padding: 0.45rem 0.65rem;
     border-radius: var(--radius-md);
     background-color: var(--bg-primary);
@@ -445,6 +445,19 @@ body {
 .btn-view-siga-item.active {
     background-color: var(--accent-color);
     color: #ffffff;
+}
+
+.btn-result-toggle {
+    background-color: #ecfdf5 !important;
+    color: #047857 !important;
+    border-color: #a7f3d0 !important;
+    font-weight: 700 !important;
+}
+
+.btn-result-toggle.active {
+    background-color: #059669 !important;
+    color: #ffffff !important;
+    border-color: #059669 !important;
 }
 
 .btn-secondary {
