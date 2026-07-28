@@ -1,11 +1,11 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Catálogo Oficial & Cruzamento Relatório ➔ Drive)
+ * Importador de Planilhas - app.js (Arquitetura Centralizada MoneyEngine)
  * ----------------------------------------------------------------------------
- * Mapeamento oficial centralizado e estrito (sem IA/heurísticas).
- * Cruzamento matemático entre Planilha de Relatório e Planilha do Drive.
- * Células recebem status interno (MATCH, MISSING, DIVERGENT, NOT_MAPPED) e
- * destaque visual suave na Tela Resultado sem alterar os valores do Relatório.
+ * Módulo único e centralizado para tratamento de valores monetários.
+ * Elimina a perda do separador decimal (ex: 892,23 virar 89223).
+ * Responsável por: importar, converter, armazenar (como Number), comparar
+ * e formatar valores para exibição no padrão brasileiro (1.245,80).
  * ============================================================================
  */
 
@@ -86,7 +86,133 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 1. CATÁLOGO OFICIAL DE CORRESPONDÊNCIAS (CENTRALIZADO & ESTRITO)
+    // 1. MÓDULO CENTRALIZADO MONEY ENGINE (TRATAMENTO FINANCEIRO UNIFICADO)
+    // ------------------------------------------------------------------------
+
+    const MoneyEngine = {
+        /**
+         * IMPORTAÇÃO / CONVERSÃO DE VALOR MONETÁRIO
+         * Aceita:
+         * - Número puro (ex: 892.23, 1245.8, 0)
+         * - Texto formato BR (ex: "892,23", "1.245,80", "R$ 892,23", "0,00")
+         * - Texto formato US/Intl (ex: "892.23", "1,245.80", "$ 1,245.80")
+         * - Inteiros e decimais
+         * Retorna sempre um Number nativo (ex: 892.23). Se inválido/vazio, retorna 0.
+         */
+        importarValor(rawVal) {
+            if (rawVal === null || rawVal === undefined) return 0;
+            if (typeof rawVal === 'number') {
+                return isNaN(rawVal) ? 0 : rawVal;
+            }
+
+            let str = String(rawVal).trim();
+            if (str === '') return 0;
+
+            // Limpa símbolos de moeda e caracteres invisíveis
+            str = str.replace(/[R$\s\u00A0\uFEFF]/g, '');
+
+            if (str === '' || str === '-') return 0;
+
+            // Análise de separadores de milhar e decimal
+            const hasComma = str.includes(',');
+            const hasDot = str.includes('.');
+
+            if (hasComma && hasDot) {
+                if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+                    // Formato brasileiro: 1.245,80 -> remove pontos de milhar, troca vírgula por ponto
+                    str = str.replace(/\./g, '').replace(',', '.');
+                } else {
+                    // Formato internacional: 1,245.80 -> remove vírgulas de milhar
+                    str = str.replace(/,/g, '');
+                }
+            } else if (hasComma) {
+                // Apenas vírgula: formato brasileiro (ex: 892,23 ou 1245,80)
+                str = str.replace(',', '.');
+            } else if (hasDot) {
+                // Apenas ponto (ex: 892.23 ou 1245.80) -> mantido como ponto decimal JS
+            }
+
+            // Remove quaisquer caracteres remanescentes que não sejam dígitos, sinal negativo ou ponto
+            str = str.replace(/[^\d.-]/g, '');
+
+            const parsed = parseFloat(str);
+            return isNaN(parsed) ? 0 : parsed;
+        },
+
+        converterValor(rawVal) {
+            return this.importarValor(rawVal);
+        },
+
+        /**
+         * COMPARAÇÃO MONETÁRIA NUMÉRICA
+         * Compara dois valores após normalização pelo MoneyEngine.
+         * Retorna true se a diferença for inferior a 0.005.
+         */
+        compararValores(val1, val2, tolerance = 0.005) {
+            const n1 = this.importarValor(val1);
+            const n2 = this.importarValor(val2);
+            return Math.abs(n1 - n2) < tolerance;
+        },
+
+        /**
+         * FORMATADOR MONETÁRIO EM PADRÃO BRASILEIRO (BRL)
+         * Converte um valor numérico interno para exibição no padrão brasileiro:
+         * - Separador de milhares: .
+         * - Separador decimal: ,
+         * - Exatamente duas casas decimais (ex: 892,23 | 1.245,80 | 0,00)
+         */
+        formatarValor(numVal, incluirSimboloBRL = false) {
+            const val = this.importarValor(numVal);
+            const formatted = val.toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+
+            if (incluirSimboloBRL) {
+                return `R$ ${formatted}`;
+            }
+            return formatted;
+        },
+
+        /**
+         * SOMA MONETÁRIA DE ARRAY DE VALORES
+         */
+        somarValores(valoresArray) {
+            if (!Array.isArray(valoresArray)) return 0;
+            return valoresArray.reduce((acc, curr) => acc + this.importarValor(curr), 0);
+        },
+
+        /**
+         * DIAGNÓSTICO DE CONVERSÃO PARA O INSPECTOR
+         */
+        obterDiagnosticoConversao(rawVal, sheetName = '', rowIdx = 0, colIdx = 0) {
+            const numVal = this.importarValor(rawVal);
+            const strFormatada = this.formatarValor(numVal);
+            const origStr = rawVal !== undefined && rawVal !== null ? String(rawVal).trim() : '';
+
+            let isInconsistent = false;
+            if (origStr.includes(',') && !origStr.endsWith(',00') && !origStr.endsWith(',0')) {
+                const decimalPart = origStr.split(',')[1];
+                if (decimalPart && decimalPart.length > 0 && numVal % 1 === 0 && numVal !== 0) {
+                    isInconsistent = true;
+                }
+            }
+
+            return {
+                sheetName,
+                rowIdx,
+                colIdx,
+                original: origStr || '(Vazio)',
+                importedStr: String(rawVal),
+                internalNum: numVal,
+                displayedBRL: strFormatada,
+                isInconsistent
+            };
+        }
+    };
+
+    // ------------------------------------------------------------------------
+    // 2. CATÁLOGO OFICIAL DE CORRESPONDÊNCIAS (CENTRALIZADO & ESTRITO)
     // ------------------------------------------------------------------------
 
     const REPORT_TO_DRIVE_MAP = {
@@ -127,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 2. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
+    // 3. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
     // ------------------------------------------------------------------------
 
     const appSession = {
@@ -148,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * MÓDULO PROCESSADOR FINAL (FinalProcessor)
      * Realiza o cruzamento de valores entre a Planilha de Relatório e a Planilha do Drive
-     * utilizando exclusivamente o Catálogo Oficial de Correspondências.
+     * utilizando o MoneyEngine para conversão, comparação e diagnóstico financeiro.
      */
     const FinalProcessor = {
         isReady: false,
@@ -160,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Executando cruzamento entre Relatório e Drive via Catálogo Oficial...", "color: #059669; font-weight: bold; font-size: 13px;");
+            console.log("%c[FinalProcessor] Executando cruzamento via MoneyEngine...", "color: #059669; font-weight: bold; font-size: 13px;");
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -184,6 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let countDivergent = 0;
             let countNotMapped = 0;
             let mappedCountInFile = 0;
+
+            const moneyDiagnosticsList = [];
 
             const itemsClassification = {
                 MATCH: [],
@@ -245,7 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let driveColIdx = -1;
                     if (driveRowIdx !== -1) {
                         for (let dC = 1; dC < driveHeaderRow.length; dC++) {
-                            const numVal = parseNumericValue(driveHeaderRow[dC]);
+                            const numVal = MoneyEngine.importarValor(driveHeaderRow[dC]);
                             if (numVal === targetDriveIndex) {
                                 driveColIdx = dC;
                                 break;
@@ -254,21 +382,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     const rawRepVal = this.reportData[rIdx][cIdx];
-                    const repVal = parseNumericValue(rawRepVal);
+                    const repVal = MoneyEngine.importarValor(rawRepVal);
                     const isRepEmptyCell = isCellEmpty(rawRepVal);
 
                     let driveVal = 0;
                     let isDriveEmptyCell = true;
+                    let rawDrvVal = '';
                     if (driveRowIdx !== -1 && driveColIdx !== -1) {
-                        const rawDrvVal = this.driveData[driveRowIdx][driveColIdx];
-                        driveVal = parseNumericValue(rawDrvVal);
+                        rawDrvVal = this.driveData[driveRowIdx][driveColIdx];
+                        driveVal = MoneyEngine.importarValor(rawDrvVal);
                         isDriveEmptyCell = isCellEmpty(rawDrvVal);
+                    }
+
+                    // Registra Diagnóstico do MoneyEngine para os primeiros itens inspecionados
+                    if (moneyDiagnosticsList.length < 12 && (!isRepEmptyCell || !isDriveEmptyCell)) {
+                        moneyDiagnosticsList.push(MoneyEngine.obterDiagnosticoConversao(rawRepVal, 'Relatório', rIdx, cIdx));
                     }
 
                     let cellStatus = 'NOT_MAPPED';
 
                     if (driveRowIdx !== -1 && driveColIdx !== -1) {
-                        const isValueEqual = Math.abs(repVal - driveVal) < 0.01;
+                        const isValueEqual = MoneyEngine.compararValores(repVal, driveVal);
 
                         if (isValueEqual && (!isRepEmptyCell || !isDriveEmptyCell)) {
                             cellStatus = 'MATCH';
@@ -326,8 +460,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     colHeaders: colHeadersWithIndices,
                     matrix: this.resultMatrix,
                     extraInfo: {
-                        dataSource: "Planilha de Relatório tratada (via Processador Final)",
-                        crossReferenceStatus: "Cruzamento com o Drive realizado exclusivamente via Catálogo Oficial"
+                        dataSource: "Planilha de Relatório tratada (via Processador Final & MoneyEngine)",
+                        crossReferenceStatus: "Cruzamento com o Drive realizado via Catálogo Oficial e MoneyEngine"
                     }
                 },
                 {
@@ -366,14 +500,28 @@ document.addEventListener('DOMContentLoaded', () => {
                             itemsClassification: itemsClassification
                         }
                     }
+                },
+                {
+                    stepNum: 4,
+                    stepTitle: "Money Engine (Tratamento Financeiro Centralizado)",
+                    rowCount: this.resultMatrix.length,
+                    colCount: maxCols,
+                    firstRow: firstRow.map(c => String(c || '').trim()),
+                    lastRow: lastRow.map(c => String(c || '').trim()),
+                    colHeaders: colHeadersWithIndices,
+                    matrix: this.resultMatrix,
+                    extraInfo: {
+                        moneyDiagnostics: moneyDiagnosticsList
+                    }
                 }
             ];
 
             const resultLogs = [
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Dados recebidos do Processador Final.", isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ MoneyEngine ativado: conversões monetárias sem perda de decimais.`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Catálogo Oficial consultado (${OfficialCatalog.getAllMappingsCount()} regras registradas).`, isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação com a Planilha do Drive concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: "✔ Resultado exibido com sucesso.", isSuccess: true }
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação numérica concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: "✔ Resultado exibido com sucesso no padrão brasileiro.", isSuccess: true }
             ];
 
             this.resultInspector = {
@@ -394,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentInspectorTimelineLogs = [];
 
     // ------------------------------------------------------------------------
-    // 3. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
+    // 4. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
     // ------------------------------------------------------------------------
 
     const TEMPORAL_REFERENCE = {
@@ -473,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 4. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
+    // 5. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -567,35 +715,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
-    function parseNumericValue(val) {
-        if (val === null || val === undefined) return 0;
-        if (typeof val === 'number') return isNaN(val) ? 0 : val;
-
-        let str = String(val).trim();
-        if (str === '') return 0;
-
-        if (str.includes(',') && str.includes('.')) {
-            if (str.indexOf('.') < str.indexOf(',')) {
-                str = str.replace(/\./g, '').replace(',', '.');
-            } else {
-                str = str.replace(/,/g, '');
-            }
-        } else if (str.includes(',')) {
-            str = str.replace(',', '.');
-        }
-
-        str = str.replace(/[^\d.-]/g, '');
-
-        const parsed = parseFloat(str);
-        return isNaN(parsed) ? 0 : parsed;
-    }
-
-    function formatBRL(amount) {
-        return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    }
-
     // ------------------------------------------------------------------------
-    // 5. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 6. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -709,6 +830,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="step-info-row">
                         <span class="step-info-label">Status do Cruzamento:</span>
                         <span class="step-info-value">${step.extraInfo.crossReferenceStatus}</span>
+                    </div>
+                `;
+            }
+
+            if (step.extraInfo && step.extraInfo.moneyDiagnostics) {
+                const diagList = step.extraInfo.moneyDiagnostics;
+                const diagRows = diagList.map(d => `
+                    <tr>
+                        <td><b>${d.sheetName} (L${d.rowIdx}:C${d.colIdx})</b></td>
+                        <td><code>"${d.original}"</code></td>
+                        <td><code>${d.internalNum}</code></td>
+                        <td><strong>${d.displayedBRL}</strong></td>
+                    </tr>
+                `).join('');
+
+                detailsBlock.innerHTML += `
+                    <div style="margin-top: 0.5rem; overflow-x: auto;">
+                        <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-primary);">Rastreamento de Valores Monetários (MoneyEngine):</h4>
+                        <table class="match-table">
+                            <thead>
+                                <tr>
+                                    <th>Célula Origem</th>
+                                    <th>Valor Original Planilha</th>
+                                    <th>Valor Interno (Number)</th>
+                                    <th>Valor Exibido (BRL)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${diagRows || '<tr><td colspan="4">Nenhum diagnóstico de valor registrado</td></tr>'}</tbody>
+                        </table>
                     </div>
                 `;
             }
@@ -930,8 +1080,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const eqHtml = step.extraInfo.equations.map(eq => `
                     <div class="equation-card-item">
                         <span class="equation-category-title">${eq.categoryName}</span>
-                        ${eq.colDetails.map(c => `<div class="equation-line">${c.colName}: <b>${formatBRL(c.value)}</b></div>`).join('')}
-                        <div class="equation-result-line">= Total: ${formatBRL(eq.total)}</div>
+                        ${eq.colDetails.map(c => `<div class="equation-line">${c.colName}: <b>${MoneyEngine.formatarValor(c.value, true)}</b></div>`).join('')}
+                        <div class="equation-result-line">= Total: ${MoneyEngine.formatarValor(eq.total, true)}</div>
                     </div>
                 `).join('');
                 detailsBlock.innerHTML += `
@@ -1008,7 +1158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 7. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -1127,7 +1277,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(`  Coluna ${letter} (índice ${colIdx}) ➔ "${originalVal}" [Normalizado: "${normVal}"]`);
         });
 
-        addInspectorLog("✔ Cabeçalho da 1ª linha inspecionado e identificado.");
+        addInspectorLog("✔ Cabeçalho da 1ª linha inspecionado e identified.");
         return matrix;
     }
 
@@ -1231,7 +1381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 7. MÓDULO DO RESUMO FINANCEIRO (SIGA)
+    // 8. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -1278,7 +1428,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let categorySumForCol = 0;
                 dataRows.forEach(row => {
                     const rawVal = row[colIdx];
-                    const numVal = parseNumericValue(rawVal);
+                    const numVal = MoneyEngine.importarValor(rawVal);
                     categoryTotals[trimmedName] += numVal;
                     categorySumForCol += numVal;
                 });
@@ -1299,7 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recordStepSnapshot(9, "Cálculo e Soma dos Totais Financeiros", matrix, {
             equations
         });
-        addInspectorLog("✔ Somas e resumo financeiro finalizados.");
+        addInspectorLog("✔ Somas e resumo financeiro finalizados via MoneyEngine.");
 
         return categoryTotals;
     }
@@ -1329,7 +1479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const value = document.createElement('span');
             value.className = 'summary-card-value';
-            value.textContent = formatBRL(totalValue);
+            value.textContent = MoneyEngine.formatarValor(totalValue, true);
 
             card.appendChild(title);
             card.appendChild(value);
@@ -1341,7 +1491,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 8. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
+    // 9. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -1780,7 +1930,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const cellVal = headerRowDrive[colIdx];
-            const numVal = parseNumericValue(cellVal);
+            const numVal = MoneyEngine.importarValor(cellVal);
 
             if (primeiroIndice !== null && ultimoIndice !== null) {
                 if (numVal >= primeiroIndice && numVal <= ultimoIndice) {
@@ -1844,7 +1994,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 10. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function viewReportSheetInTable() {
@@ -1908,7 +2058,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentInspectorTimelineLogs = FinalProcessor.resultInspector.timelineLogs;
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final)";
-        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive via Catálogo Oficial de Correspondências.";
+        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive via Catálogo Oficial e MoneyEngine.";
 
         summaryContainer.classList.add('hidden');
         renderSpreadsheetTable(FinalProcessor.resultMatrix);
@@ -2045,7 +2195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 11. LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -2085,7 +2235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 10. RENDERIZAÇÃO DA TABELA (Table Renderer COM DESTAQUE VISUAL DE CÉLULAS)
+    // 12. RENDERIZAÇÃO DA TABELA (Table Renderer COM MONEY ENGINE)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -2161,8 +2311,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 td.dataset.colIndex = colIdx;
                 td.dataset.rowIndex = actualRowIdx;
 
-                const cellValue = rowData[colIdx];
-                td.textContent = cellValue !== undefined && cellValue !== null ? cellValue : '';
+                const rawCellValue = rowData[colIdx];
+
+                if (colIdx > 0 && !isCellEmpty(rawCellValue) && typeof rawCellValue !== 'string') {
+                    // Formata números via MoneyEngine para exibição BRL no visualizador
+                    td.textContent = MoneyEngine.formatarValor(rawCellValue);
+                } else if (colIdx > 0 && !isCellEmpty(rawCellValue) && !isNaN(MoneyEngine.importarValor(rawCellValue)) && /[\d,]/.test(String(rawCellValue))) {
+                    td.textContent = MoneyEngine.formatarValor(rawCellValue);
+                } else {
+                    td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
+                }
 
                 // APLICAÇÃO DE DESTAQUE VISUAL DE CÉLULAS APENAS NO RESULTADO FINAL E EM COLUNAS DE MESES (colIdx > 0)
                 if (isResultView && colIdx > 0) {
