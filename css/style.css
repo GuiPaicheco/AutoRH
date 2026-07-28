@@ -46,6 +46,7 @@
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 
     --radius-sm: 8px;
     --radius-md: 12px;
@@ -70,7 +71,7 @@ body {
     min-height: 100vh;
 }
 
-/* Contêiner Principal expandido para ocupar praticamente toda a tela */
+/* Contêiner Principal expandido */
 .app-container {
     width: 100%;
     max-width: 98vw;
@@ -293,7 +294,7 @@ body {
 .table-wrapper {
     width: 100%;
     max-height: calc(82vh - 180px);
-    overflow: auto; /* Rolagem horizontal e vertical fluida */
+    overflow: auto;
     position: relative;
     background-color: #ffffff;
 }
@@ -307,12 +308,11 @@ body {
     table-layout: auto;
 }
 
-/* Célula Origem do Canto Superior Esquerdo (Cruzamento Cabeçalho/Índice) */
 .excel-table thead tr th.corner-header {
     position: sticky;
     top: 0;
     left: 0;
-    z-index: 30; /* Fica acima dos outros sticky */
+    z-index: 30;
     background-color: var(--sheet-corner-bg);
     border-right: 2px solid var(--sheet-header-border);
     border-bottom: 2px solid var(--sheet-header-border);
@@ -323,7 +323,6 @@ body {
     font-size: 0.75rem;
 }
 
-/* Cabeçalho das Colunas (A, B, C... + Nome Inteligente) */
 .excel-table thead th.col-header {
     position: sticky;
     top: 0;
@@ -341,7 +340,6 @@ body {
     transition: background-color var(--transition-fast);
 }
 
-/* Estrutura do Título da Coluna: Letra em Destaque + Nome da Coluna */
 .col-header-inner {
     display: flex;
     flex-direction: column;
@@ -365,7 +363,6 @@ body {
     text-overflow: ellipsis;
 }
 
-/* Coluna Fixa de Números das Linhas (1, 2, 3...) */
 .excel-table tbody th.row-index {
     position: sticky;
     left: 0;
@@ -385,7 +382,6 @@ body {
     transition: background-color var(--transition-fast);
 }
 
-/* Células de Dados da Planilha */
 .excel-table td {
     padding: 0.4rem 0.875rem;
     height: 36px;
@@ -396,10 +392,9 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     transition: background-color var(--transition-fast);
-    cursor: cell; /* Cursor no formato de célula do Excel */
+    cursor: cell;
 }
 
-/* Alternância Suave de Cores nas Linhas (Zebra Striping) */
 .excel-table tbody tr:nth-child(even) td {
     background-color: var(--sheet-row-even);
 }
@@ -408,17 +403,11 @@ body {
     background-color: var(--sheet-row-odd);
 }
 
-/* --------------------------------------------------------------------------
-   5. Interatividade (Hover de Linha/Coluna & Seleção de Células)
-   -------------------------------------------------------------------------- */
-
-/* Destaque ao passar o mouse sobre a linha inteira */
 .excel-table tbody tr.row-hover td,
 .excel-table tbody tr.row-hover th.row-index {
     background-color: var(--sheet-hover-bg) !important;
 }
 
-/* Destaque ao passar o mouse sobre a coluna inteira */
 .excel-table td.col-hover {
     background-color: var(--sheet-hover-bg) !important;
 }
@@ -428,7 +417,6 @@ body {
     border-bottom-color: var(--accent-color) !important;
 }
 
-/* Célula Selecionada (Foco Estilo Excel) */
 .excel-table td.cell-selected {
     background-color: var(--sheet-selection-bg) !important;
     outline: 2px solid var(--sheet-selection-border) !important;
@@ -437,7 +425,187 @@ body {
     font-weight: 500;
 }
 
-/* Utilitário de Ocultação */
+/* --------------------------------------------------------------------------
+   5. Modal de Seleção do Tipo de Planilha (Design Moderno & Glassmorphism)
+   -------------------------------------------------------------------------- */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(6px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    animation: fadeIn var(--transition-normal);
+}
+
+.modal-card {
+    background-color: var(--bg-card);
+    width: 100%;
+    max-width: 480px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    border: 1px solid var(--border-color);
+    padding: 2rem;
+    position: relative;
+    animation: scaleUp var(--transition-normal);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.modal-close-btn {
+    position: absolute;
+    top: 1.25rem;
+    right: 1.25rem;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 50%;
+    transition: all var(--transition-fast);
+}
+
+.modal-close-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+}
+
+.modal-header {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.modal-icon-wrapper {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background-color: var(--accent-light);
+    color: var(--accent-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.25rem;
+}
+
+.modal-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.modal-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+}
+
+/* Cards das Opções de Tipo de Planilha */
+.type-option-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.125rem 1.25rem;
+    border-radius: var(--radius-md);
+    border: 2px solid var(--border-color);
+    background-color: var(--bg-card);
+    text-align: left;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+}
+
+.type-option-card:hover {
+    border-color: var(--accent-color);
+    background-color: var(--accent-light);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.option-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    background-color: #f1f5f9;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all var(--transition-fast);
+}
+
+.type-option-card:hover .option-icon {
+    background-color: var(--accent-color);
+    color: #ffffff;
+}
+
+.option-icon-siga {
+    background-color: #ecfdf5;
+    color: #059669;
+}
+
+.type-option-card:hover .option-icon-siga {
+    background-color: #059669;
+    color: #ffffff;
+}
+
+.option-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.option-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.option-desc {
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+}
+
+/* Alerta Modal (Para fluxo não implementado) */
+.modal-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background-color: #fffbebf5;
+    border: 1px solid #fde68a;
+    color: #b45309;
+    padding: 0.875rem 1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    animation: fadeIn var(--transition-fast);
+}
+
+/* Animações */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Utilidade de Ocultação */
 .hidden {
     display: none !important;
 }
@@ -460,6 +628,10 @@ body {
 
     .drop-zone {
         padding: 1.5rem 1rem;
+    }
+
+    .modal-card {
+        padding: 1.5rem;
     }
 
     .excel-table td,
