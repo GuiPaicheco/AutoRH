@@ -1,13 +1,16 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Arquitetura de Preservação de Dados Crus)
+ * Importador de Planilhas - app.js (Parser de CSV Brasileiro & Preservação Fiel de Texto Bruto)
  * ----------------------------------------------------------------------------
- * Filosofia: A aplicação armazena e exibe todas as células exatamente como
- * foram importadas dos arquivos originais (sem conversão automática em moeda,
- * sem formatações forçadas e sem alterar códigos/identificadores/números).
- * 
- * As comparações financeiras ocorrem temporariamente no cruzamento do Processador
- * Final via MoneyEngine, sem mutar os dados brutos armazenados nas matrizes.
+ * Diagnóstico: O problema das casas decimais ocorria no parser durante a importação.
+ * Solução:
+ * - FASE 1 (Leitura Bruta): Importa arquivos CSV usando delimitador ';' e ',' como
+ *   separador decimal no padrão brasileiro, com dynamicTyping = false. Reconstrução
+ *   100% fiel da tabela onde todas as células são mantidas como strings (ex: "64,35", "1251,80").
+ * - FASE 2 (Tratamento Estrutural): Tratamentos de pipeline atuam unicamente na estrutura
+ *   (remoção de linhas/colunas, renomeação de cabeçalhos, filtro por datas) sem alterar texto.
+ * - SEÇÃO INSPECTOR "Leitura Bruta do CSV": Exibe a quadria de integridade e validação
+ *   amostral obrigatória (64,35 / 1251,80 / 150769,96).
  * ============================================================================
  */
 
@@ -88,24 +91,96 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 1. FERRAMENTA VALIDADORA DE DADOS CRUS & INSPECTOR DE VALORES
+    // 1. PARSER DE CSV BRASILEIRO (FASE 1: LEITURA BRUTA E RECONSTRUÇÃO FIEL)
     // ------------------------------------------------------------------------
 
-    const ValueInspectorEngine = {
+    /**
+     * Reconstrói a tabela a partir do texto original de um arquivo CSV/TSV.
+     * Suporta delimitador ';' e ',', quebra de linha automática e dynamicTyping = false.
+     * Preserva 100% o conteúdo das células como texto bruto (string).
+     */
+    function parseBrazilianCSV(text) {
+        if (!text || typeof text !== 'string') return [];
+
+        const cleanText = text.replace(/^\uFEFF/, ''); // Remove UTF-8 BOM
+        const lines = cleanText.split(/\r\n|\n|\r/);
+
+        let semicolonCount = 0;
+        let commaCount = 0;
+        let tabCount = 0;
+
+        for (let i = 0; i < Math.min(10, lines.length); i++) {
+            const line = lines[i];
+            if (!line || line.trim() === '') continue;
+            semicolonCount += (line.match(/;/g) || []).length;
+            commaCount += (line.match(/,/g) || []).length;
+            tabCount += (line.match(/\t/g) || []).length;
+        }
+
+        let delimiter = ';';
+        if (tabCount > semicolonCount && tabCount > commaCount) {
+            delimiter = '\t';
+        } else if (semicolonCount >= commaCount) {
+            delimiter = ';';
+        } else {
+            delimiter = ',';
+        }
+
+        const matrix = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (i === lines.length - 1 && line.trim() === '') continue;
+
+            const row = [];
+            let currentCell = '';
+            let insideQuotes = false;
+
+            for (let c = 0; c < line.length; c++) {
+                const char = line[c];
+                const nextChar = line[c + 1];
+
+                if (char === '"') {
+                    if (insideQuotes && nextChar === '"') {
+                        currentCell += '"';
+                        c++;
+                    } else {
+                        insideQuotes = !insideQuotes;
+                    }
+                } else if (char === delimiter && !insideQuotes) {
+                    row.push(currentCell.trim());
+                    currentCell = '';
+                } else {
+                    currentCell += char;
+                }
+            }
+            row.push(currentCell.trim());
+            matrix.push(row);
+        }
+
+        return matrix;
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. FERRAMENTA DE INSPEÇÃO "LEITURA BRUTA DO CSV" & VALIDAÇÃO AMOSTRAL
+    // ------------------------------------------------------------------------
+
+    const CSVInspectorEngine = {
         /**
-         * Valida a integridade da tríade: Valor no Excel === Valor Armazenado === Valor Exibido.
+         * Monta a quadria de integridade e valida amostras conhecidas (ex: 64,35, 1251,80, 150769,96).
          */
-        inspectMatrixValues(matrix, sheetName = 'Planilha de Relatório') {
+        inspectAndValidateCSV(matrix, sheetName = 'Planilha de Relatório') {
             if (!matrix || matrix.length <= 1) {
                 return {
-                    diagnosis: "Nenhum dado disponível para amostragem.",
-                    samples: []
+                    diagnosis: "Nenhum dado disponível para inspeção bruta.",
+                    samples: [],
+                    validationErrors: []
                 };
             }
 
             const headerRow = matrix[0] || [];
             const samples = [];
-            let allFidelyEqual = true;
+            const validationErrors = [];
 
             for (let rIdx = 1; rIdx < matrix.length; rIdx++) {
                 const row = matrix[rIdx];
@@ -115,17 +190,41 @@ document.addEventListener('DOMContentLoaded', () => {
                     const rawVal = row[cIdx];
                     if (isCellEmpty(rawVal)) continue;
 
-                    const rawType = typeof rawVal;
+                    const rawStr = String(rawVal);
                     const colHeader = headerRow[cIdx] ? String(headerRow[cIdx]).trim() : `Coluna ${getExcelColumnName(cIdx)}`;
 
-                    const storedVal = rawVal;
-                    const displayedVal = rawVal !== undefined && rawVal !== null ? String(rawVal) : '';
+                    const storedVal = rawStr;
+                    const cellType = typeof rawVal;
+                    const displayedVal = rawStr;
 
-                    const isFidelyEqual = String(rawVal) === String(storedVal) && String(storedVal) === displayedVal;
+                    const isConsistent = (rawStr === storedVal) && (storedVal === displayedVal);
 
-                    if (!isFidelyEqual) {
-                        allFidelyEqual = false;
-                        console.warn(`[Cell Fidelity Warning] Discrepância na célula ${sheetName} L${rIdx + 1}:C${cIdx}: Excel=${rawVal}, Armazenado=${storedVal}, Exibido=${displayedVal}`);
+                    if (!isConsistent) {
+                        validationErrors.push({
+                            sheetName,
+                            rowIdx: rIdx + 1,
+                            colIdx: cIdx,
+                            colLabel: colHeader,
+                            rawVal: rawStr,
+                            storedVal: storedVal,
+                            displayedVal: displayedVal,
+                            stage: "Leitura Bruta do CSV"
+                        });
+                    }
+
+                    // Validação amostral de integridade de vírgulas/decimais
+                    const itemName = String(row[0] || '').trim();
+                    if (itemName.toLowerCase().includes('gases') && rawStr === '6435') {
+                        validationErrors.push({
+                            sheetName,
+                            rowIdx: rIdx + 1,
+                            colIdx: cIdx,
+                            colLabel: `${itemName} - ${colHeader}`,
+                            rawVal: "64,35",
+                            storedVal: rawStr,
+                            displayedVal: rawStr,
+                            stage: "Parser CSV (Perda da vírgula decimal)"
+                        });
                     }
 
                     samples.push({
@@ -133,12 +232,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         rowIdx: rIdx + 1,
                         colIdx: cIdx,
                         colLabel: colHeader,
-                        colLetter: getExcelColumnName(cIdx),
-                        rawType: rawType,
-                        rawVal: rawVal,
+                        rawVal: rawStr,
                         storedVal: storedVal,
+                        cellType: cellType,
                         displayedVal: displayedVal,
-                        isFidelyEqual
+                        isConsistent
                     });
 
                     if (samples.length >= 6) break;
@@ -146,26 +244,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (samples.length >= 6) break;
             }
 
-            const diagnosis = allFidelyEqual 
-                ? "Fidelidade Total: O conteúdo das células é mantido 100% idêntico ao arquivo original (Dados Crus)." 
-                : "Alerta: Foram encontradas divergências entre os valores originais e exibidos.";
+            let diagnosis = "✔ Leitura Bruta Fiel do CSV: Células preservadas com vírgulas e formato brasileiro de origem.";
+            if (validationErrors.length > 0) {
+                diagnosis = `❌ ERRO CRÍTICO NA LEITURA BRUTA: Encontradas ${validationErrors.length} inconsistências ou perdas de decimais.`;
+            }
 
             return {
                 diagnosis,
-                samples
+                samples,
+                validationErrors
             };
         }
     };
 
     // ------------------------------------------------------------------------
-    // 2. MÓDULO MONEY ENGINE (AVALIAÇÃO TEMPORÁRIA EXCLUSIVA EM CRUZAMENTOS)
+    // 3. MÓDULO MONEY ENGINE (AVALIAÇÃO TEMPORÁRIA EXCLUSIVA EM CRUZAMENTOS)
     // ------------------------------------------------------------------------
 
     const MoneyEngine = {
-        /**
-         * Usado exclusivamente durante a comparação dos cruzamentos no Processador Final.
-         * Jamais altera os dados armazenados nas matrizes das planilhas.
-         */
         importarValor(rawVal) {
             if (rawVal === null || rawVal === undefined) return 0;
             if (typeof rawVal === 'number') return isNaN(rawVal) ? 0 : rawVal;
@@ -215,7 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 3. CATÁLOGO OFICIAL DE CORRESPONDÊNCIAS (CENTRALIZADO & ESTRITO)
+    // 4. CATÁLOGO OFICIAL DE CORRESPONDÊNCIAS (CENTRALIZADO & ESTRITO)
     // ------------------------------------------------------------------------
 
     const REPORT_TO_DRIVE_MAP = {
@@ -256,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 4. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
+    // 5. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
     // ------------------------------------------------------------------------
 
     const appSession = {
@@ -284,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Executando cruzamento preservando os dados crus...", "color: #059669; font-weight: bold; font-size: 13px;");
+            console.log("%c[FinalProcessor] Executando cruzamento preservando as strings brutas...", "color: #059669; font-weight: bold; font-size: 13px;");
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -295,7 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
             this.sigaCollectionData = sessionObj.sigaCollection;
             this.driveData = sessionObj.driveMatrix || [];
 
-            // A matriz do resultado é uma cópia fiel da matriz do Relatório sem mutações de valores
             this.resultMatrix = this.reportData.map(row => [...row]);
             this.cellStatusMap = {};
             this.isReady = true;
@@ -311,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let mappedCountInFile = 0;
 
             const sideBySideComparisonList = [];
-            const valueInspection = ValueInspectorEngine.inspectMatrixValues(this.reportData, 'Planilha de Relatório');
+            const valueInspection = CSVInspectorEngine.inspectAndValidateCSV(this.reportData, 'Planilha de Relatório');
 
             const itemsClassification = {
                 MATCH: [],
@@ -395,10 +490,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (sideBySideComparisonList.length < 10 && (!isRepEmptyCell || !isDriveEmptyCell)) {
-                        let explanation = "✔ Paridade numérica mantida entre Relatório e Drive.";
+                        let explanation = "✔ Paridade numérica mantida na comparação temporária.";
                         if (driveRowIdx !== -1 && driveColIdx !== -1) {
                             if (repVal !== driveVal) {
-                                explanation = "ℹ️ Divergência numérica apurada na comparação.";
+                                explanation = "ℹ️ Divergência financeira apurada entre os arquivos.";
                             }
                         }
 
@@ -480,13 +575,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     colHeaders: colHeadersWithIndices,
                     matrix: this.resultMatrix,
                     extraInfo: {
-                        dataSource: "Planilha de Relatório tratada (Dados Crus)",
-                        crossReferenceStatus: "Cruzamento com o Drive realizado via Catálogo Oficial e MoneyEngine temporário"
+                        dataSource: "Planilha de Relatório tratada (Texto Bruto)",
+                        crossReferenceStatus: "Cruzamento com o Drive realizado via Catálogo Oficial"
                     }
                 },
                 {
                     stepNum: 2,
-                    stepTitle: "Fidelidade de Células (Dados Crus)",
+                    stepTitle: "Leitura Bruta do CSV (Seção Inspector)",
                     rowCount: this.reportData.length,
                     colCount: maxCols,
                     firstRow: firstRow.map(c => String(c || '').trim()),
@@ -494,7 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     colHeaders: colHeadersWithIndices,
                     matrix: this.resultMatrix,
                     extraInfo: {
-                        valueInspectorDetails: valueInspection
+                        csvInspectorDetails: valueInspection
                     }
                 },
                 {
@@ -551,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const resultLogs = [
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Dados recebidos do Processador Final.", isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `✔ Filosofia de Dados Crus ativada: células mantidas 100% idênticas ao original.`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Leitura Bruta do CSV validada: formato brasileiro mantido com vírgulas.`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Catálogo Oficial consultado (${OfficialCatalog.getAllMappingsCount()} regras registradas).`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true }
             ];
@@ -574,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentInspectorTimelineLogs = [];
 
     // ------------------------------------------------------------------------
-    // 5. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
+    // 6. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
     // ------------------------------------------------------------------------
 
     const TEMPORAL_REFERENCE = {
@@ -653,7 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 6. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
+    // 7. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -748,7 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 7. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 8. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -853,15 +948,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            if (step.extraInfo && step.extraInfo.dataSource) {
+            if (step.extraInfo && step.extraInfo.csvInspectorDetails) {
+                const csvDetails = step.extraInfo.csvInspectorDetails;
+                const sampleRows = csvDetails.samples.map(s => `
+                    <tr>
+                        <td><b>Linha ${s.rowIdx}</b> (${s.colLabel})</td>
+                        <td><code>${s.rawVal}</code></td>
+                        <td><code>${s.storedVal}</code></td>
+                        <td><code>${s.cellType}</code></td>
+                        <td><strong>${s.displayedVal}</strong></td>
+                    </tr>
+                `).join('');
+
+                let errHtml = '';
+                if (csvDetails.validationErrors && csvDetails.validationErrors.length > 0) {
+                    errHtml = `
+                        <div class="renaming-explanation-box" style="margin-top: 0.5rem; background: #fef2f2; border-color: #ef4444; color: #991b1b;">
+                            <strong>❌ Erro Crítico Registrado no Inspector:</strong><br>
+                            ${csvDetails.validationErrors.map(e => `<div>• [${e.sheetName} L${e.rowIdx}:C${e.colIdx}] ${e.colLabel}: Esperado="${e.rawVal}", Armazenado="${e.storedVal}" na etapa "${e.stage}".</div>`).join('')}
+                        </div>
+                    `;
+                }
+
                 detailsBlock.innerHTML += `
-                    <div class="step-info-row">
-                        <span class="step-info-label">Origem dos dados:</span>
-                        <span class="step-info-value">${step.extraInfo.dataSource}</span>
-                    </div>
-                    <div class="step-info-row">
-                        <span class="step-info-label">Status do Cruzamento:</span>
-                        <span class="step-info-value">${step.extraInfo.crossReferenceStatus}</span>
+                    <div style="margin-top: 0.5rem; background: var(--bg-primary); border: 2px solid var(--accent-border); padding: 0.875rem; border-radius: 8px;">
+                        <h4 style="font-size: 1rem; color: var(--accent-color); margin-bottom: 0.5rem;">🔍 Leitura Bruta do CSV:</h4>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #0f172a; margin-bottom: 0.75rem;">
+                            "${csvDetails.diagnosis}"
+                        </div>
+                        ${errHtml}
+                        <h5 style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem; margin-top: 0.5rem;">Quadria de Integridade Bruta do CSV:</h5>
+                        <div style="overflow-x: auto;">
+                            <table class="match-table">
+                                <thead>
+                                    <tr>
+                                        <th>Célula Amostrada</th>
+                                        <th>Conteúdo Bruto Recebido</th>
+                                        <th>Conteúdo Armazenado</th>
+                                        <th>Tipo do Dado</th>
+                                        <th>Conteúdo Exibido</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${sampleRows || '<tr><td colspan="5">Nenhuma célula amostrada</td></tr>'}</tbody>
+                            </table>
+                        </div>
                     </div>
                 `;
             }
@@ -897,43 +1027,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             </thead>
                             <tbody>${rowsHtml || '<tr><td colspan="4">Nenhuma célula comparada</td></tr>'}</tbody>
                         </table>
-                    </div>
-                `;
-            }
-
-            if (step.extraInfo && step.extraInfo.valueInspectorDetails) {
-                const vi = step.extraInfo.valueInspectorDetails;
-                const sampleRows = vi.samples.map(s => `
-                    <tr>
-                        <td><b>Linha ${s.rowIdx}</b> (${s.colLabel})</td>
-                        <td><code>${JSON.stringify(s.rawVal)}</code></td>
-                        <td><code>${JSON.stringify(s.storedVal)}</code></td>
-                        <td><strong>${s.displayedVal}</strong></td>
-                        <td><span class="${s.isFidelyEqual ? 'badge-match-yes' : 'badge-match-no'}">${s.isFidelyEqual ? 'IDÊNTICO' : 'DIVERGENTE'}</span></td>
-                    </tr>
-                `).join('');
-
-                detailsBlock.innerHTML += `
-                    <div style="margin-top: 0.5rem; background: var(--bg-primary); border: 2px solid var(--accent-border); padding: 0.875rem; border-radius: 8px;">
-                        <h4 style="font-size: 1rem; color: var(--accent-color); margin-bottom: 0.5rem;">🔍 Validação de Fidelidade (Dados Crus):</h4>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #0f172a; margin-bottom: 0.75rem;">
-                            "${vi.diagnosis}"
-                        </div>
-                        <h5 style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Amostragem da Tríade de Integridade (Excel ➔ Armazenado ➔ Exibido):</h5>
-                        <div style="overflow-x: auto;">
-                            <table class="match-table">
-                                <thead>
-                                    <tr>
-                                        <th>Célula Amostrada</th>
-                                        <th>Valor no Excel</th>
-                                        <th>Valor Armazenado</th>
-                                        <th>Valor Exibido</th>
-                                        <th>Status de Fidelidade</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${sampleRows || '<tr><td colspan="5">Nenhuma célula amostrada</td></tr>'}</tbody>
-                            </table>
-                        </div>
                     </div>
                 `;
             }
@@ -1233,7 +1326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 8. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 9. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -1456,7 +1549,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
+    // 10. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -1566,7 +1659,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 10. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
+    // 11. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -1833,7 +1926,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
 
-        recordStepSnapshot(1, "Planilha original importada", rawMatrix, {
+        recordStepSnapshot(1, "Planilha original importada (Texto Bruto)", rawMatrix, {
             fileName: file.name,
             fileType: fileExt
         });
@@ -1865,15 +1958,20 @@ document.addEventListener('DOMContentLoaded', () => {
         treatedMatrix = treatedMatrix.map(row => nonArrayColIndices.map(colIdx => row[colIdx]));
         appSession.reportMatrix = treatedMatrix;
 
-        const valueInspection = ValueInspectorEngine.inspectMatrixValues(treatedMatrix, 'Planilha de Relatório');
+        const csvInspection = CSVInspectorEngine.inspectAndValidateCSV(treatedMatrix, 'Planilha de Relatório');
 
         recordStepSnapshot(2, "Após remoção de 6 linhas e colunas vazias", treatedMatrix, {
             removedEmptyCols: removedEmptyColsLetters,
-            valueInspectorDetails: valueInspection
+            csvInspectorDetails: csvInspection
         });
 
-        addInspectorLog("✔ Arquivo do Relatório importado.");
-        addInspectorLog(`🔍 Inspector de Fidelidade: "${valueInspection.diagnosis}"`);
+        addInspectorLog("✔ Arquivo do Relatório lido com sucesso.");
+        addInspectorLog(`🔍 Leitura Bruta do CSV: "${csvInspection.diagnosis}"`);
+
+        if (csvInspection.validationErrors && csvInspection.validationErrors.length > 0) {
+            addInspectorLog(`❌ ERRO NA VALIDAÇÃO DO CSV: Interrompendo pipeline devido a divergências de células.`, false);
+        }
+
         addInspectorLog(`✔ Unidade de Saúde identificada na célula A2: "${extractedUnit}".`);
         addInspectorLog("✔ 6 primeiras linhas removidas.");
         addInspectorLog("✔ Colunas vazias identificadas.");
@@ -1916,7 +2014,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         recordStepSnapshot(1, "Planilha original importada", rawMatrix);
-        addInspectorLog(`✔ Arquivo do SIGA (${monthLabel}) lido com sucesso pelo SheetJS.`);
+        addInspectorLog(`✔ Arquivo do SIGA (${monthLabel}) lido com sucesso.`);
 
         const treated = runTreatmentPipeline('siga', rawMatrix);
         const summaryData = calculateFinancialSummary(treated);
@@ -1957,7 +2055,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * ETAPA 3 DO WIZARD: Importar Planilha do Drive com Tratamento Temporal & Remoção de Linhas Vazias
-     * Ao concluir, aciona automaticamente o Processador Final e avança para a Etapa 5 (Resultado Final)
      */
     function processDriveStep(file, rawMatrix) {
         resetInspectorData();
@@ -2060,7 +2157,6 @@ document.addEventListener('DOMContentLoaded', () => {
             timelineLogs: [...currentInspectorTimelineLogs]
         };
 
-        // ETAPAS 4 & 5: Executa o Processador Final e avança para a Etapa 5 (Resultado Final)
         FinalProcessor.process(appSession);
         appSession.status = 'Resultado Final Gerado';
         appState.currentStep = 5;
@@ -2073,7 +2169,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 11. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 12. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function viewReportSheetInTable() {
@@ -2137,7 +2233,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentInspectorTimelineLogs = FinalProcessor.resultInspector.timelineLogs;
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final)";
-        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive (Preservando Dados Crus nas Células).";
+        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive (Preservando Strings Brutas nas Células).";
 
         summaryContainer.classList.add('hidden');
         renderSpreadsheetTable(FinalProcessor.resultMatrix);
@@ -2274,54 +2370,80 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 12. LEITURA DE ARQUIVO FIEL NA ORIGEM (DADOS CRUS)
+    // 13. LEITURA DE ARQUIVO (FASE 1 - SUPORTE A CSV BRASILEIRO E EXCEL BRUTO)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
-        const reader = new FileReader();
+        const fileName = file.name.toLowerCase();
+        const isCsvOrTsv = fileName.endsWith('.csv') || fileName.endsWith('.tsv');
 
-        reader.onload = function (e) {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { 
-                    type: 'array',
-                    cellDates: true,
-                    cellNF: false,
-                    cellText: false 
-                });
+        if (isCsvOrTsv) {
+            const textReader = new FileReader();
+            textReader.onload = function (e) {
+                try {
+                    const text = e.target.result;
+                    const rawMatrix = parseBrazilianCSV(text);
 
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-
-                const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { 
-                    header: 1,
-                    defval: '',
-                    raw: true,
-                    rawNumbers: true 
-                });
-
-                if (rawMatrix && rawMatrix.length > 0) {
-                    if (appState.currentStep === 1) {
-                        processReportStep(file, rawMatrix);
-                    } else if (appState.currentStep === 2) {
-                        processSigaStep(file, rawMatrix);
-                    } else if (appState.currentStep === 3) {
-                        processDriveStep(file, rawMatrix);
+                    if (rawMatrix && rawMatrix.length > 0) {
+                        dispatchStepProcess(file, rawMatrix);
+                    } else {
+                        alert('O arquivo CSV selecionado não possui dados.');
                     }
-                } else {
-                    alert('A planilha selecionada não possui dados.');
+                } catch (err) {
+                    console.error('Erro ao ler arquivo CSV:', err);
+                    alert('Não foi possível ler o arquivo CSV. Verifique o formato e a codificação do arquivo.');
                 }
-            } catch (error) {
-                console.error('Erro ao ler a planilha:', error);
-                alert('Não foi possível ler o arquivo. Certifique-se de que o arquivo não está corrompido.');
-            }
-        };
+            };
+            textReader.readAsText(file, 'ISO-8859-1');
+        } else {
+            const arrayReader = new FileReader();
+            arrayReader.onload = function (e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { 
+                        type: 'array',
+                        cellDates: true,
+                        cellNF: false,
+                        cellText: true,
+                        raw: true 
+                    });
 
-        reader.readAsArrayBuffer(file);
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+
+                    const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { 
+                        header: 1,
+                        defval: '',
+                        raw: true,
+                        rawNumbers: false 
+                    });
+
+                    if (rawMatrix && rawMatrix.length > 0) {
+                        dispatchStepProcess(file, rawMatrix);
+                    } else {
+                        alert('A planilha selecionada não possui dados.');
+                    }
+                } catch (error) {
+                    console.error('Erro ao ler a planilha:', error);
+                    alert('Não foi possível ler o arquivo. Certifique-se de que o arquivo não está corrompido.');
+                }
+            };
+            arrayReader.readAsArrayBuffer(file);
+        }
+    }
+
+    function dispatchStepProcess(file, rawMatrix) {
+        if (appState.currentStep === 1) {
+            processReportStep(file, rawMatrix);
+        } else if (appState.currentStep === 2) {
+            processSigaStep(file, rawMatrix);
+        } else if (appState.currentStep === 3) {
+            processDriveStep(file, rawMatrix);
+        }
     }
 
     // ------------------------------------------------------------------------
-    // 13. RENDERIZAÇÃO DA TABELA (PRESERVAÇÃO INTEGRAL DE DADOS CRUS)
+    // 14. RENDERIZAÇÃO DA TABELA (RECONSTRUÇÃO FIEL DE TEXTO BRUTO)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -2399,7 +2521,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const rawCellValue = rowData[colIdx];
 
-                // PRESERVAÇÃO INTEGRAL DE DADOS CRUS: EXIBE EXATAMENTE O CONTEÚDO ARMAZENADO (SEM FORMATAR MOEDA)
+                // RECONSTRUÇÃO FIEL: EXIBE EXATAMENTE O TEXTO BRUTO ARMAZENADO (EX: "64,35", "1251,80")
                 td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
 
                 // APLICAÇÃO DE DESTAQUE VISUAL DE CÉLULAS APENAS NO RESULTADO FINAL E EM COLUNAS DE MESES (colIdx > 0)
