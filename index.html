@@ -21,7 +21,7 @@
         <!-- Cabeçalho Principal -->
         <header class="app-header">
             <h1 class="app-title">Importador de Planilhas</h1>
-            <p class="app-subtitle">Selecione um arquivo Excel para visualizar seus dados.</p>
+            <p class="app-subtitle">Selecione um arquivo Excel, CSV, TSV ou ODS para visualizar seus dados.</p>
         </header>
 
         <!-- Seção de Importação de Arquivo -->
@@ -37,8 +37,8 @@
                     <label for="fileInput" class="btn-primary">
                         Escolher Arquivo
                     </label>
-                    <input type="file" id="fileInput" accept=".xlsx, .xls" class="file-input-hidden">
-                    <p class="supported-formats">Formatos suportados: .xlsx, .xls</p>
+                    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .tsv, .ods" class="file-input-hidden">
+                    <p class="supported-formats">Formatos suportados: .xlsx, .xls, .csv, .tsv, .ods</p>
                 </div>
             </div>
 
@@ -59,7 +59,7 @@
             </div>
         </section>
 
-        <!-- Área de Visualização da Planilha -->
+        <!-- Área de Visualização da Planilha Estilo Excel -->
         <main class="viewer-section">
             <!-- Mensagem quando nenhum arquivo estiver carregado -->
             <div class="empty-state" id="emptyState">
@@ -69,7 +69,7 @@
                 <p class="empty-state-text">Nenhuma planilha carregada.</p>
             </div>
 
-            <!-- Contêiner da Tabela de Dados (Preenchido via JavaScript) -->
+            <!-- Contêiner da Tabela de Dados (Estilo Excel / Google Sheets) -->
             <div class="table-wrapper hidden" id="tableWrapper">
                 <table class="excel-table" id="excelTable">
                     <thead id="tableHead"></thead>
