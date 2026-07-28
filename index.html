@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importador de Planilhas</title>
+    
+    <!-- Fonte Google Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Estilos Principais -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Biblioteca SheetJS (XLSX) via CDN para leitura de planilhas no navegador -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Cabeçalho Principal -->
+        <header class="app-header">
+            <h1 class="app-title">Importador de Planilhas</h1>
+            <p class="app-subtitle">Selecione um arquivo Excel para visualizar seus dados.</p>
+        </header>
+
+        <!-- Seção de Importação de Arquivo -->
+        <section class="upload-section">
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-content">
+                    <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p class="drop-zone-text">Arraste e solte sua planilha aqui ou</p>
+                    
+                    <!-- Botão Grande para Selecionar Arquivo -->
+                    <label for="fileInput" class="btn-primary">
+                        Escolher Arquivo
+                    </label>
+                    <input type="file" id="fileInput" accept=".xlsx, .xls" class="file-input-hidden">
+                    <p class="supported-formats">Formatos suportados: .xlsx, .xls</p>
+                </div>
+            </div>
+
+            <!-- Área Exibindo o Nome do Arquivo Importado -->
+            <div class="file-info-card hidden" id="fileInfoCard">
+                <div class="file-info-details">
+                    <svg class="file-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <div class="file-text-wrapper">
+                        <span class="file-label">Arquivo selecionado:</span>
+                        <span class="file-name" id="fileNameText">Nenhum arquivo</span>
+                    </div>
+                </div>
+                <button type="button" class="btn-secondary" id="btnRemoveFile" title="Remover planilha">
+                    Remover
+                </button>
+            </div>
+        </section>
+
+        <!-- Área de Visualização da Planilha -->
+        <main class="viewer-section">
+            <!-- Mensagem quando nenhum arquivo estiver carregado -->
+            <div class="empty-state" id="emptyState">
+                <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <p class="empty-state-text">Nenhuma planilha carregada.</p>
+            </div>
+
+            <!-- Contêiner da Tabela de Dados (Preenchido via JavaScript) -->
+            <div class="table-wrapper hidden" id="tableWrapper">
+                <table class="excel-table" id="excelTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts da Aplicação -->
+    <script src="js/app.js"></script>
+</body>
+</html>
