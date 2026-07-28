@@ -1,10 +1,13 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Correção de Decimais na Origem & Comparação Lado a Lado)
+ * Importador de Planilhas - app.js (Arquitetura de Preservação de Dados Crus)
  * ----------------------------------------------------------------------------
- * Preserva com 100% de fidelidade os decimais nativos fornecidos pelo SheetJS
- * (ex: 64.35 permanece 64.35 e 892.23 permanece 892.23, sem perdas nem divisões artificiais).
- * Inclui o Inspector Comparativo Lado a Lado (Relatório vs Drive).
+ * Filosofia: A aplicação armazena e exibe todas as células exatamente como
+ * foram importadas dos arquivos originais (sem conversão automática em moeda,
+ * sem formatações forçadas e sem alterar códigos/identificadores/números).
+ * 
+ * As comparações financeiras ocorrem temporariamente no cruzamento do Processador
+ * Final via MoneyEngine, sem mutar os dados brutos armazenados nas matrizes.
  * ============================================================================
  */
 
@@ -85,21 +88,24 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 1. FERRAMENTA INSPECTOR DE VALORES (DIAGNÓSTICO DA BIBLIOTECA)
+    // 1. FERRAMENTA VALIDADORA DE DADOS CRUS & INSPECTOR DE VALORES
     // ------------------------------------------------------------------------
 
     const ValueInspectorEngine = {
+        /**
+         * Valida a integridade da tríade: Valor no Excel === Valor Armazenado === Valor Exibido.
+         */
         inspectMatrixValues(matrix, sheetName = 'Planilha de Relatório') {
             if (!matrix || matrix.length <= 1) {
                 return {
-                    diagnosis: "Nenhum dado numérico disponível para amostragem.",
+                    diagnosis: "Nenhum dado disponível para amostragem.",
                     samples: []
                 };
             }
 
             const headerRow = matrix[0] || [];
             const samples = [];
-            const typesFound = new Set();
+            let allFidelyEqual = true;
 
             for (let rIdx = 1; rIdx < matrix.length; rIdx++) {
                 const row = matrix[rIdx];
@@ -110,9 +116,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (isCellEmpty(rawVal)) continue;
 
                     const rawType = typeof rawVal;
-                    typesFound.add(rawType);
-
                     const colHeader = headerRow[cIdx] ? String(headerRow[cIdx]).trim() : `Coluna ${getExcelColumnName(cIdx)}`;
+
+                    const storedVal = rawVal;
+                    const displayedVal = rawVal !== undefined && rawVal !== null ? String(rawVal) : '';
+
+                    const isFidelyEqual = String(rawVal) === String(storedVal) && String(storedVal) === displayedVal;
+
+                    if (!isFidelyEqual) {
+                        allFidelyEqual = false;
+                        console.warn(`[Cell Fidelity Warning] Discrepância na célula ${sheetName} L${rIdx + 1}:C${cIdx}: Excel=${rawVal}, Armazenado=${storedVal}, Exibido=${displayedVal}`);
+                    }
 
                     samples.push({
                         sheetName,
@@ -122,8 +136,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         colLetter: getExcelColumnName(cIdx),
                         rawType: rawType,
                         rawVal: rawVal,
-                        storedVal: MoneyEngine.importarValor(rawVal),
-                        displayedVal: MoneyEngine.formatarValor(rawVal)
+                        storedVal: storedVal,
+                        displayedVal: displayedVal,
+                        isFidelyEqual
                     });
 
                     if (samples.length >= 6) break;
@@ -131,12 +146,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (samples.length >= 6) break;
             }
 
-            let diagnosis = "A biblioteca fornece valores numéricos exatos ou mistos.";
-            if (typesFound.size === 1 && typesFound.has('number')) {
-                diagnosis = "A biblioteca já fornece números exatos na origem (preservando decimais).";
-            } else if (typesFound.size === 1 && typesFound.has('string')) {
-                diagnosis = "A biblioteca fornece texto formatado na origem.";
-            }
+            const diagnosis = allFidelyEqual 
+                ? "Fidelidade Total: O conteúdo das células é mantido 100% idêntico ao arquivo original (Dados Crus)." 
+                : "Alerta: Foram encontradas divergências entre os valores originais e exibidos.";
 
             return {
                 diagnosis,
@@ -146,27 +158,21 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 2. MÓDULO CENTRALIZADO MONEY ENGINE (CORREÇÃO DE DECIMAIS NA ORIGEM)
+    // 2. MÓDULO MONEY ENGINE (AVALIAÇÃO TEMPORÁRIA EXCLUSIVA EM CRUZAMENTOS)
     // ------------------------------------------------------------------------
 
     const MoneyEngine = {
         /**
-         * IMPORTAÇÃO / CONVERSÃO DE VALOR MONETÁRIO SEM PERDA DE DECIMAIS
-         * Preserva o número nativo retornado pelo SheetJS (ex: 64.35 -> 64.35).
-         * Se for string, converte preservando os decimais exatos (sem remover pontos).
+         * Usado exclusivamente durante a comparação dos cruzamentos no Processador Final.
+         * Jamais altera os dados armazenados nas matrizes das planilhas.
          */
         importarValor(rawVal) {
             if (rawVal === null || rawVal === undefined) return 0;
-            
-            // Se já é Number fornecido pela biblioteca, PRESERVA DIRETO SEM ALTERAÇÃO
-            if (typeof rawVal === 'number') {
-                return isNaN(rawVal) ? 0 : rawVal;
-            }
+            if (typeof rawVal === 'number') return isNaN(rawVal) ? 0 : rawVal;
 
             let str = String(rawVal).trim();
             if (str === '' || str === '-') return 0;
 
-            // Limpa símbolos de moeda R$ ou $
             str = str.replace(/[R$\s\u00A0\uFEFF]/g, '');
             if (str === '') return 0;
 
@@ -175,20 +181,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (hasComma && hasDot) {
                 if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
-                    // Formato BR: 1.245,80 -> remove pontos de milhar, substitui vírgula por ponto
                     str = str.replace(/\./g, '').replace(',', '.');
                 } else {
-                    // Formato Intl: 1,245.80 -> remove vírgulas de milhar
                     str = str.replace(/,/g, '');
                 }
             } else if (hasComma) {
-                // Apenas vírgula: formato BR (ex: 892,23 ou 64,35)
                 str = str.replace(',', '.');
-            } else if (hasDot) {
-                // Apenas ponto (ex: 892.23 ou 64.35) -> JÁ É O DECIMAL CORRETO EM JS! NÃO REMOVE O PONTO!
             }
 
-            // Remove caracteres inválidos remanescentes
             str = str.replace(/[^\d.-]/g, '');
             const parsed = parseFloat(str);
             return isNaN(parsed) ? 0 : parsed;
@@ -284,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Executando cruzamento e validação de decimais...", "color: #059669; font-weight: bold; font-size: 13px;");
+            console.log("%c[FinalProcessor] Executando cruzamento preservando os dados crus...", "color: #059669; font-weight: bold; font-size: 13px;");
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -295,6 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.sigaCollectionData = sessionObj.sigaCollection;
             this.driveData = sessionObj.driveMatrix || [];
 
+            // A matriz do resultado é uma cópia fiel da matriz do Relatório sem mutações de valores
             this.resultMatrix = this.reportData.map(row => [...row]);
             this.cellStatusMap = {};
             this.isReady = true;
@@ -310,8 +311,6 @@ document.addEventListener('DOMContentLoaded', () => {
             let mappedCountInFile = 0;
 
             const sideBySideComparisonList = [];
-            let decimalLossDetected = false;
-
             const valueInspection = ValueInspectorEngine.inspectMatrixValues(this.reportData, 'Planilha de Relatório');
 
             const itemsClassification = {
@@ -395,15 +394,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         isDriveEmptyCell = isCellEmpty(rawDrvVal);
                     }
 
-                    // MONTAGEM DO INSPECTOR COMPARATIVO LADO A LADO (RELATÓRIO VS DRIVE)
                     if (sideBySideComparisonList.length < 10 && (!isRepEmptyCell || !isDriveEmptyCell)) {
                         let explanation = "✔ Paridade numérica mantida entre Relatório e Drive.";
                         if (driveRowIdx !== -1 && driveColIdx !== -1) {
-                            if (Math.abs(repVal * 100 - driveVal) < 0.01 && repVal !== driveVal) {
-                                explanation = "⚠️ ALERTA: Relatório parece ter perdido 2 casas decimais na importação original.";
-                                decimalLossDetected = true;
-                            } else if (repVal !== driveVal) {
-                                explanation = "ℹ️ Divergência financeira legítima entre os valores dos arquivos.";
+                            if (repVal !== driveVal) {
+                                explanation = "ℹ️ Divergência numérica apurada na comparação.";
                             }
                         }
 
@@ -413,12 +408,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             report: {
                                 rawVal: rawRepVal,
                                 rawType: typeof rawRepVal,
-                                storedVal: repVal
+                                storedVal: rawRepVal
                             },
                             drive: {
                                 rawVal: rawDrvVal,
                                 rawType: typeof rawDrvVal,
-                                storedVal: driveVal
+                                storedVal: rawDrvVal
                             },
                             explanation
                         });
@@ -485,13 +480,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     colHeaders: colHeadersWithIndices,
                     matrix: this.resultMatrix,
                     extraInfo: {
-                        dataSource: "Planilha de Relatório tratada (via Processador Final)",
-                        crossReferenceStatus: "Cruzamento com o Drive realizado via Catálogo Oficial"
+                        dataSource: "Planilha de Relatório tratada (Dados Crus)",
+                        crossReferenceStatus: "Cruzamento com o Drive realizado via Catálogo Oficial e MoneyEngine temporário"
                     }
                 },
                 {
                     stepNum: 2,
-                    stepTitle: "Comparação Lado a Lado de Decimais (Relatório vs Drive)",
+                    stepTitle: "Fidelidade de Células (Dados Crus)",
                     rowCount: this.reportData.length,
                     colCount: maxCols,
                     firstRow: firstRow.map(c => String(c || '').trim()),
@@ -499,12 +494,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     colHeaders: colHeadersWithIndices,
                     matrix: this.resultMatrix,
                     extraInfo: {
-                        sideBySideComparison: sideBySideComparisonList,
-                        decimalLossDetected
+                        valueInspectorDetails: valueInspection
                     }
                 },
                 {
                     stepNum: 3,
+                    stepTitle: "Comparação Lado a Lado (Relatório vs Drive)",
+                    rowCount: this.reportData.length,
+                    colCount: maxCols,
+                    firstRow: firstRow.map(c => String(c || '').trim()),
+                    lastRow: lastRow.map(c => String(c || '').trim()),
+                    colHeaders: colHeadersWithIndices,
+                    matrix: this.resultMatrix,
+                    extraInfo: {
+                        sideBySideComparison: sideBySideComparisonList
+                    }
+                },
+                {
+                    stepNum: 4,
                     stepTitle: "Catálogo Oficial de Correspondências",
                     rowCount: this.reportData.length,
                     colCount: maxCols,
@@ -522,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 },
                 {
-                    stepNum: 4,
+                    stepNum: 5,
                     stepTitle: "Comparação com a Planilha do Drive",
                     rowCount: this.resultMatrix.length,
                     colCount: maxCols,
@@ -544,8 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const resultLogs = [
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Dados recebidos do Processador Final.", isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `✔ Leitura do Relatório preservada na origem (sem perdas nem divisões artificiais).`, isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `✔ Inspector Comparativo Lado a Lado ativado.`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Filosofia de Dados Crus ativada: células mantidas 100% idênticas ao original.`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Catálogo Oficial consultado (${OfficialCatalog.getAllMappingsCount()} regras registradas).`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true }
             ];
@@ -900,32 +906,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 const sampleRows = vi.samples.map(s => `
                     <tr>
                         <td><b>Linha ${s.rowIdx}</b> (${s.colLabel})</td>
-                        <td><code>${s.rawType}</code></td>
                         <td><code>${JSON.stringify(s.rawVal)}</code></td>
                         <td><code>${JSON.stringify(s.storedVal)}</code></td>
                         <td><strong>${s.displayedVal}</strong></td>
+                        <td><span class="${s.isFidelyEqual ? 'badge-match-yes' : 'badge-match-no'}">${s.isFidelyEqual ? 'IDÊNTICO' : 'DIVERGENTE'}</span></td>
                     </tr>
                 `).join('');
 
                 detailsBlock.innerHTML += `
                     <div style="margin-top: 0.5rem; background: var(--bg-primary); border: 2px solid var(--accent-border); padding: 0.875rem; border-radius: 8px;">
-                        <h4 style="font-size: 1rem; color: var(--accent-color); margin-bottom: 0.5rem;">🔍 Diagnóstico Conclusivo da Biblioteca:</h4>
-                        <div style="font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-bottom: 0.75rem;">
+                        <h4 style="font-size: 1rem; color: var(--accent-color); margin-bottom: 0.5rem;">🔍 Validação de Fidelidade (Dados Crus):</h4>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #0f172a; margin-bottom: 0.75rem;">
                             "${vi.diagnosis}"
                         </div>
-                        <h5 style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Amostragem Automática de Células do Relatório:</h5>
+                        <h5 style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Amostragem da Tríade de Integridade (Excel ➔ Armazenado ➔ Exibido):</h5>
                         <div style="overflow-x: auto;">
                             <table class="match-table">
                                 <thead>
                                     <tr>
                                         <th>Célula Amostrada</th>
-                                        <th>Tipo JS (typeof)</th>
-                                        <th>Valor Bruto da Biblioteca</th>
+                                        <th>Valor no Excel</th>
                                         <th>Valor Armazenado</th>
-                                        <th>Valor Exibido na Interface</th>
+                                        <th>Valor Exibido</th>
+                                        <th>Status de Fidelidade</th>
                                     </tr>
                                 </thead>
-                                <tbody>${sampleRows || '<tr><td colspan="5">Nenhuma célula numérica amostrada</td></tr>'}</tbody>
+                                <tbody>${sampleRows || '<tr><td colspan="5">Nenhuma célula amostrada</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
@@ -1867,7 +1873,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         addInspectorLog("✔ Arquivo do Relatório importado.");
-        addInspectorLog(`🔍 Inspector de Valores: "${valueInspection.diagnosis}"`);
+        addInspectorLog(`🔍 Inspector de Fidelidade: "${valueInspection.diagnosis}"`);
         addInspectorLog(`✔ Unidade de Saúde identificada na célula A2: "${extractedUnit}".`);
         addInspectorLog("✔ 6 primeiras linhas removidas.");
         addInspectorLog("✔ Colunas vazias identificadas.");
@@ -2131,7 +2137,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentInspectorTimelineLogs = FinalProcessor.resultInspector.timelineLogs;
 
         inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final)";
-        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive via Catálogo Oficial e Inspector de Valores.";
+        inspectorSheetSubtitle.textContent = "Visualização do cruzamento entre Relatório e Drive (Preservando Dados Crus nas Células).";
 
         summaryContainer.classList.add('hidden');
         renderSpreadsheetTable(FinalProcessor.resultMatrix);
@@ -2268,7 +2274,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 12. LEITURA DE ARQUIVO FIEL NA ORIGEM (SHEETJS RAW IMPORT)
+    // 12. LEITURA DE ARQUIVO FIEL NA ORIGEM (DADOS CRUS)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -2287,7 +2293,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
 
-                // raw: true e rawNumbers: true garantem a preservação dos decimais brutos nativos da planilha
                 const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { 
                     header: 1,
                     defval: '',
@@ -2316,7 +2321,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 13. RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 13. RENDERIZAÇÃO DA TABELA (PRESERVAÇÃO INTEGRAL DE DADOS CRUS)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -2394,11 +2399,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const rawCellValue = rowData[colIdx];
 
-                if (colIdx > 0 && !isCellEmpty(rawCellValue) && typeof rawCellValue === 'number') {
-                    td.textContent = MoneyEngine.formatarValor(rawCellValue);
-                } else {
-                    td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
-                }
+                // PRESERVAÇÃO INTEGRAL DE DADOS CRUS: EXIBE EXATAMENTE O CONTEÚDO ARMAZENADO (SEM FORMATAR MOEDA)
+                td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
 
                 // APLICAÇÃO DE DESTAQUE VISUAL DE CÉLULAS APENAS NO RESULTADO FINAL E EM COLUNAS DE MESES (colIdx > 0)
                 if (isResultView && colIdx > 0) {
