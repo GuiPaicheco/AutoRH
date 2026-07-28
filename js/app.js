@@ -1,17 +1,18 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Estilo Excel / Google Sheets + Pipeline SIGA Completo)
+ * Importador de Planilhas - app.js (Estilo Excel + Pipeline SIGA + Resumo Financeiro)
  * ----------------------------------------------------------------------------
  * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, escolha do
- * tipo de planilha e execução do pipeline de tratamento de dados.
+ * tipo de planilha, tratamento via pipeline e geração de resumo financeiro.
  * 
  * Arquitetura em Módulos:
- * 1. Utilidades de Planilha (Excel Utilities)
+ * 1. Mapeamento & Utilidades (Excel & Number Utilities)
  * 2. Motor de Regras & Pipelines (Treatment Pipeline Engine)
- * 3. Gerenciamento do Modal (Modal Controller)
- * 4. Interface & Eventos (UI Controller)
- * 5. Leitura de Arquivo (Spreadsheet Reader)
- * 6. Renderização Interativa da Tabela (Table Renderer)
+ * 3. Módulo do Resumo Financeiro (Financial Summary Engine)
+ * 4. Gerenciamento do Modal (Modal Controller)
+ * 5. Interface & Eventos (UI Controller)
+ * 6. Leitura de Arquivo (Spreadsheet Reader)
+ * 7. Renderização da Tabela & Cards (Render Controller)
  * ============================================================================
  */
 
@@ -29,6 +30,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableHead = document.getElementById('tableHead');
     const tableBody = document.getElementById('tableBody');
 
+    // Elementos do Resumo Financeiro
+    const summaryContainer = document.getElementById('summaryContainer');
+    const summaryGrid = document.getElementById('summaryGrid');
+
     // Elementos do Modal
     const typeSelectionModal = document.getElementById('typeSelectionModal');
     const modalCloseBtn = document.getElementById('modalCloseBtn');
@@ -43,12 +48,30 @@ document.addEventListener('DOMContentLoaded', () => {
         rawMatrixData: [],
         treatedMatrixData: [],
         selectedCell: null,
-        selectedType: null
+        selectedType: null,
+        summaryData: {}
     };
 
     // ------------------------------------------------------------------------
-    // 1. MÓDULO DE UTILIDADES DE PLANILHA (Excel Utilities)
+    // 1. MAPEAMENTO & UTILIDADES (Excel & Number Utilities)
     // ------------------------------------------------------------------------
+
+    /**
+     * Tabela Oficial de Padronização de Nomes das Colunas (Regra 5).
+     */
+    const COLUMN_NAME_MAP = {
+        'COM_INCP_AGENTE': 'Remuneração a Pessoal Estatutário (ACS)',
+        'COM_INCP_COMISSIONADO': 'Remuneração a Pessoal - CLT',
+        'COM_INCP_TEMPORARIO': 'Remuneração a Pessoal - CLT',
+        'COM_INCP_ESTAGIARIO': 'Remuneração a Pessoal - CLT',
+        'COM_INCP_ESTATUTARIO': 'Remuneração a Pessoal Estatutário Municipal',
+        'SEM_INCP_AGENTE': 'Benefício a Pessoal Estatutário (ACS)',
+        'SEM_INCP_COMISSIONADO': 'Benefício a Pessoal - CLT',
+        'SEM_INCP_TEMPORARIO': 'Benefício a Pessoal - CLT',
+        'SEM_INCP_ESTAGIARIO': 'Remuneração a Pessoal - CLT',
+        'SEM_INCP_ESTATUTARIO': 'Benefício a Pessoal Estatutário Municipal',
+        'HORA EXTRA': 'Hora Extra'
+    };
 
     /**
      * Converte um índice numérico de coluna em letras do Excel (0 -> A, 1 -> B, 25 -> Z, 26 -> AA...).
@@ -66,8 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Converte uma letra de coluna do Excel (A, B, C... Z, AA...) em seu índice numérico zero-based.
-     * Exemplo: 'A' -> 0, 'G' -> 6, 'H' -> 7, 'I' -> 8, 'J' -> 9.
+     * Converte uma letra de coluna do Excel (A, B... Z, AA...) em índice numérico zero-based.
      * @param {string} letter 
      * @returns {number}
      */
@@ -81,8 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Verifica se um valor de célula é considerado totalmente vazio.
-     * Células nulas, indefinidas, string vazia ("") ou contendo apenas espaços são vazias.
+     * Verifica se uma célula está vazia.
      * @param {any} value 
      * @returns {boolean}
      */
@@ -92,27 +113,54 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
+    /**
+     * Converte um valor bruto de célula em número válido (suporta decimais, negativos e formato pt-BR).
+     * @param {any} val 
+     * @returns {number}
+     */
+    function parseNumericValue(val) {
+        if (val === null || val === undefined) return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+
+        let str = String(val).trim();
+        if (str === '') return 0;
+
+        // Trata formato de moeda/número brasileiro ("1.234,56" ou "-1.234,56")
+        if (str.includes(',') && str.includes('.')) {
+            str = str.replace(/\./g, '').replace(',', '.');
+        } else if (str.includes(',')) {
+            str = str.replace(',', '.');
+        }
+
+        // Remove quaisquer caracteres que não sejam dígitos, sinal de menos ou ponto decimal
+        str = str.replace(/[^\d.-]/g, '');
+        const parsed = parseFloat(str);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    /**
+     * Formata um valor numérico em moeda brasileira (R$ 0,00).
+     * @param {number} amount 
+     * @returns {string}
+     */
+    function formatBRL(amount) {
+        return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
     // ------------------------------------------------------------------------
     // 2. MOTOR DE REGRAS & PIPELINES (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     /**
-     * Regra 1: Remove completamente as `count` primeiras linhas da planilha.
-     * @param {Array<Array<any>>} matrix 
-     * @param {number} count 
-     * @returns {Array<Array<any>>}
+     * Regra 1: Remover as `count` primeiras linhas.
      */
     function removeTopRowsRule(matrix, count = 3) {
-        if (!matrix || matrix.length <= count) {
-            return [];
-        }
+        if (!matrix || matrix.length <= count) return [];
         return matrix.slice(count);
     }
 
     /**
-     * Regra 2: Remove todas as colunas que estejam COMPLETAMENTE vazias.
-     * @param {Array<Array<any>>} matrix 
-     * @returns {Array<Array<any>>}
+     * Regra 2: Remover colunas 100% vazias.
      */
     function removeEmptyColumnsRule(matrix) {
         if (!matrix || matrix.length === 0) return [];
@@ -137,42 +185,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const cleanMatrix = matrix.map(row => {
-            return nonArrayColIndices.map(colIdx => row[colIdx]);
-        });
-
-        return cleanMatrix;
+        return matrix.map(row => nonArrayColIndices.map(colIdx => row[colIdx]));
     }
 
     /**
-     * Regra 3: Remover colunas por letras em uma ordem específica.
-     * Exemplo: ['J', 'I', 'H', 'G', 'A'].
-     * A ordem decrescente é fundamental para evitar alteração dos índices restantes.
-     * Caso a coluna não exista na matriz atual, a remoção é ignorada.
-     * 
-     * @param {Array<Array<any>>} matrix 
-     * @param {Array<string>} lettersOrder - Lista de letras na ordem exata de remoção
-     * @returns {Array<Array<any>>}
+     * Regra 3: Remover colunas específicas por letras (J, I, H, G, A nesta ordem).
      */
     function removeSpecificColumnsByLetterRule(matrix, lettersOrder = ['J', 'I', 'H', 'G', 'A']) {
         if (!matrix || matrix.length === 0) return [];
 
-        // Cria uma cópia profunda/superficial das linhas da matriz
         let currentMatrix = matrix.map(row => [...row]);
 
         lettersOrder.forEach(letter => {
             const targetIdx = excelColumnNameToIndex(letter);
 
-            // Verifica se o índice existe na matriz atual
             if (targetIdx >= 0) {
-                // Descobre se a matriz possui largura suficiente para essa coluna
                 let currentMaxCols = 0;
                 currentMatrix.forEach(row => {
                     if (row.length > currentMaxCols) currentMaxCols = row.length;
                 });
 
                 if (targetIdx < currentMaxCols) {
-                    // Remove a coluna `targetIdx` de todas as linhas
                     currentMatrix = currentMatrix.map(row => {
                         const newRow = [...row];
                         newRow.splice(targetIdx, 1);
@@ -186,37 +219,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Regra 4: Remover as `count` últimas linhas da planilha.
-     * Sempre remove as duas últimas linhas. Se houver 2 ou menos linhas, esvazia.
-     * 
-     * @param {Array<Array<any>>} matrix 
-     * @param {number} count - Quantidade de linhas do final a remover
-     * @returns {Array<Array<any>>}
+     * Regra 4: Remover as `count` últimas linhas.
      */
     function removeBottomRowsRule(matrix, count = 2) {
-        if (!matrix || matrix.length <= count) {
-            return [];
-        }
+        if (!matrix || matrix.length <= count) return [];
         return matrix.slice(0, matrix.length - count);
+    }
+
+    /**
+     * Regra 5: Padronização dos nomes das colunas de acordo com a tabela de mapeamento.
+     * @param {Array<Array<any>>} matrix 
+     * @param {Object} nameMap 
+     * @returns {Array<Array<any>>}
+     */
+    function standardizeHeaderNamesRule(matrix, nameMap = COLUMN_NAME_MAP) {
+        if (!matrix || matrix.length === 0) return [];
+
+        const updatedMatrix = matrix.map(row => [...row]);
+        const headerRow = updatedMatrix[0] || [];
+
+        const newHeaderRow = headerRow.map(cell => {
+            const cellStr = String(cell).trim().toUpperCase();
+
+            // Procura correspondência insensível a maiúsculas/minúsculas
+            const foundKey = Object.keys(nameMap).find(key => key.toUpperCase() === cellStr);
+            if (foundKey) {
+                return nameMap[foundKey];
+            }
+            return cell;
+        });
+
+        updatedMatrix[0] = newHeaderRow;
+        return updatedMatrix;
     }
 
     /**
      * Registro de Pipelines de Tratamento por Tipo de Planilha.
      */
     const SPREADSHEET_PIPELINES = {
-        // Fluxo "Planilha do SIGA": Executa em ordem estrita Regras 1, 2, 3 e 4
+        // Fluxo "Planilha do SIGA": Regras 1, 2, 3, 4 e 5
         siga: [
             (matrix) => removeTopRowsRule(matrix, 3),                                        // Regra 1
             (matrix) => removeEmptyColumnsRule(matrix),                                       // Regra 2
             (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // Regra 3
-            (matrix) => removeBottomRowsRule(matrix, 2)                                      // Regra 4
+            (matrix) => removeBottomRowsRule(matrix, 2),                                      // Regra 4
+            (matrix) => standardizeHeaderNamesRule(matrix, COLUMN_NAME_MAP)                   // Regra 5
         ],
-        // Fluxo "Planilha de Relatório" (Reservado para versões futuras)
         relatorio: []
     };
 
     /**
-     * Executa o pipeline de tratamento correspondente ao tipo de planilha selecionado.
+     * Executa o pipeline de tratamento correspondente.
      * @param {string} sheetType 
      * @param {Array<Array<any>>} rawMatrix 
      * @returns {Array<Array<any>>}
@@ -226,12 +279,93 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!pipeline || pipeline.length === 0) {
             return rawMatrix;
         }
-
         return pipeline.reduce((currentMatrix, ruleFn) => ruleFn(currentMatrix), rawMatrix);
     }
 
     // ------------------------------------------------------------------------
-    // 3. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
+    // 3. MÓDULO DO RESUMO FINANCEIRO (Financial Summary Engine)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Regra 6: Agrupa automaticamente todas as colunas financeiras padronizadas
+     * e calcula o somatório total acumulado de cada categoria.
+     * 
+     * @param {Array<Array<any>>} matrix - Matriz tratada (contendo o cabeçalho padronizado na linha 0)
+     * @returns {Object} Dicionário contendo { [categoriaPadronizada]: valorTotal }
+     */
+    function calculateFinancialSummary(matrix) {
+        if (!matrix || matrix.length <= 1) return {};
+
+        const headerRow = matrix[0] || [];
+        const dataRows = matrix.slice(1);
+
+        // Obter a lista de nomes padronizados válidos
+        const validStandardNames = Array.from(new Set(Object.values(COLUMN_NAME_MAP)));
+
+        const categoryTotals = {};
+
+        // Mapeia todas as colunas que pertencem a alguma categoria padronizada
+        headerRow.forEach((colName, colIdx) => {
+            const trimmedName = String(colName).trim();
+
+            if (validStandardNames.includes(trimmedName)) {
+                if (!categoryTotals[trimmedName]) {
+                    categoryTotals[trimmedName] = 0;
+                }
+
+                // Soma todas as células daquela coluna nas linhas de dados
+                dataRows.forEach(row => {
+                    const rawVal = row[colIdx];
+                    const numVal = parseNumericValue(rawVal);
+                    categoryTotals[trimmedName] += numVal;
+                });
+            }
+        });
+
+        return categoryTotals;
+    }
+
+    /**
+     * Renderiza o painel visual com cartões contendo os totais de cada categoria.
+     * @param {Object} summaryTotals - Objeto com os totais calculados { categoria: valor }
+     */
+    function renderFinancialSummaryCards(summaryTotals) {
+        summaryGrid.innerHTML = '';
+
+        const categories = Object.keys(summaryTotals);
+
+        if (categories.length === 0) {
+            summaryContainer.classList.add('hidden');
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        categories.forEach(categoryName => {
+            const totalValue = summaryTotals[categoryName] || 0;
+
+            const card = document.createElement('div');
+            card.className = 'summary-card';
+
+            const title = document.createElement('span');
+            title.className = 'summary-card-title';
+            title.textContent = categoryName;
+
+            const value = document.createElement('span');
+            value.className = 'summary-card-value';
+            value.textContent = formatBRL(totalValue);
+
+            card.appendChild(title);
+            card.appendChild(value);
+            fragment.appendChild(card);
+        });
+
+        summaryGrid.appendChild(fragment);
+        summaryContainer.classList.remove('hidden');
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
     // ------------------------------------------------------------------------
 
     function openTypeModal() {
@@ -261,16 +395,21 @@ document.addEventListener('DOMContentLoaded', () => {
         appState.selectedType = 'siga';
         closeTypeModal();
 
-        // Executa o pipeline expandido do SIGA (Regras 1, 2, 3 e 4)
+        // 1. Executa o pipeline de tratamento do SIGA (Regras 1 a 5)
         const treated = runTreatmentPipeline('siga', appState.rawMatrixData);
         appState.treatedMatrixData = treated;
 
-        // Renderiza a tabela final com os dados tratados
+        // 2. Calcula o Resumo Financeiro (Regra 6)
+        const summaryData = calculateFinancialSummary(treated);
+        appState.summaryData = summaryData;
+
+        // 3. Renderiza os cartões de resumo e a tabela tratada
+        renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
     }
 
     // ------------------------------------------------------------------------
-    // 4. MÓDULO DE INTERFACE & EVENTOS (UI Controller)
+    // 5. MÓDULO DE INTERFACE & EVENTOS (UI Controller)
     // ------------------------------------------------------------------------
 
     function initEvents() {
@@ -355,17 +494,20 @@ document.addEventListener('DOMContentLoaded', () => {
         appState.treatedMatrixData = [];
         appState.selectedCell = null;
         appState.selectedType = null;
+        appState.summaryData = {};
 
         tableHead.innerHTML = '';
         tableBody.innerHTML = '';
+        summaryGrid.innerHTML = '';
 
+        summaryContainer.classList.add('hidden');
         tableWrapper.classList.add('hidden');
         emptyState.classList.remove('hidden');
         closeTypeModal();
     }
 
     // ------------------------------------------------------------------------
-    // 5. MÓDULO DE LEITURA DE ARQUIVO (Spreadsheet Reader)
+    // 6. MÓDULO DE LEITURA DE ARQUIVO (Spreadsheet Reader)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -402,13 +544,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 6. MÓDULO DE RENDERIZAÇÃO DA TABELA (Table Renderer)
+    // 7. RENDERIZAÇÃO DA TABELA (Table Renderer)
     // ------------------------------------------------------------------------
 
-    /**
-     * Renderiza a matriz tratada em formato de planilha moderna (Excel / Google Sheets).
-     * @param {Array<Array<any>>} matrix - Matriz bidimensional tratada
-     */
     function renderSpreadsheetTable(matrix) {
         tableHead.innerHTML = '';
         tableBody.innerHTML = '';
@@ -424,7 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.length > maxCols) maxCols = row.length;
         });
 
-        // --- A. Renderiza o Cabeçalho (Letras + Nome Inteligente) ---
+        // --- A. Renderiza o Cabeçalho (Letras + Nome Inteligente Padronizado) ---
         const trHead = document.createElement('tr');
         
         const thCorner = document.createElement('th');
@@ -464,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tableHead.appendChild(trHead);
 
-        // --- B. Renderiza o Corpo da Tabela (Linhas Restantes) ---
+        // --- B. Renderiza o Corpo da Tabela ---
         const bodyRows = matrix.slice(1);
         const fragment = document.createDocumentFragment();
 
