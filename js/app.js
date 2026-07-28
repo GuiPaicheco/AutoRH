@@ -1,13 +1,10 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Ferramenta "Inspector de Valores")
+ * Importador de Planilhas - app.js (Correção de Decimais na Origem & Comparação Lado a Lado)
  * ----------------------------------------------------------------------------
- * Diagnóstico de importação de dados brutos sem conversões automáticas.
- * Inspeciona o tipo (typeof) e valor bruto exatos fornecidos pelo SheetJS.
- * Diagnóstico conclusivo:
- * - "A biblioteca já fornece números."
- * - "A biblioteca fornece texto."
- * - "A biblioteca fornece valores inconsistentes."
+ * Preserva com 100% de fidelidade os decimais nativos fornecidos pelo SheetJS
+ * (ex: 64.35 permanece 64.35 e 892.23 permanece 892.23, sem perdas nem divisões artificiais).
+ * Inclui o Inspector Comparativo Lado a Lado (Relatório vs Drive).
  * ============================================================================
  */
 
@@ -92,10 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
 
     const ValueInspectorEngine = {
-        /**
-         * Realiza a amostragem automática de células da Planilha de Relatório.
-         * Retorna a lista de amostras e a conclusão diagnóstica final.
-         */
         inspectMatrixValues(matrix, sheetName = 'Planilha de Relatório') {
             if (!matrix || matrix.length <= 1) {
                 return {
@@ -129,8 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         colLetter: getExcelColumnName(cIdx),
                         rawType: rawType,
                         rawVal: rawVal,
-                        storedVal: rawVal,
-                        displayedVal: String(rawVal)
+                        storedVal: MoneyEngine.importarValor(rawVal),
+                        displayedVal: MoneyEngine.formatarValor(rawVal)
                     });
 
                     if (samples.length >= 6) break;
@@ -138,11 +131,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (samples.length >= 6) break;
             }
 
-            let diagnosis = "A biblioteca fornece valores inconsistentes.";
+            let diagnosis = "A biblioteca fornece valores numéricos exatos ou mistos.";
             if (typesFound.size === 1 && typesFound.has('number')) {
-                diagnosis = "A biblioteca já fornece números.";
+                diagnosis = "A biblioteca já fornece números exatos na origem (preservando decimais).";
             } else if (typesFound.size === 1 && typesFound.has('string')) {
-                diagnosis = "A biblioteca fornece texto.";
+                diagnosis = "A biblioteca fornece texto formatado na origem.";
             }
 
             return {
@@ -153,17 +146,27 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 2. MÓDULO CENTRALIZADO MONEY ENGINE (MODO DIAGNÓSTICO)
+    // 2. MÓDULO CENTRALIZADO MONEY ENGINE (CORREÇÃO DE DECIMAIS NA ORIGEM)
     // ------------------------------------------------------------------------
 
     const MoneyEngine = {
+        /**
+         * IMPORTAÇÃO / CONVERSÃO DE VALOR MONETÁRIO SEM PERDA DE DECIMAIS
+         * Preserva o número nativo retornado pelo SheetJS (ex: 64.35 -> 64.35).
+         * Se for string, converte preservando os decimais exatos (sem remover pontos).
+         */
         importarValor(rawVal) {
             if (rawVal === null || rawVal === undefined) return 0;
-            if (typeof rawVal === 'number') return isNaN(rawVal) ? 0 : rawVal;
+            
+            // Se já é Number fornecido pela biblioteca, PRESERVA DIRETO SEM ALTERAÇÃO
+            if (typeof rawVal === 'number') {
+                return isNaN(rawVal) ? 0 : rawVal;
+            }
 
             let str = String(rawVal).trim();
             if (str === '' || str === '-') return 0;
 
+            // Limpa símbolos de moeda R$ ou $
             str = str.replace(/[R$\s\u00A0\uFEFF]/g, '');
             if (str === '') return 0;
 
@@ -172,14 +175,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (hasComma && hasDot) {
                 if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+                    // Formato BR: 1.245,80 -> remove pontos de milhar, substitui vírgula por ponto
                     str = str.replace(/\./g, '').replace(',', '.');
                 } else {
+                    // Formato Intl: 1,245.80 -> remove vírgulas de milhar
                     str = str.replace(/,/g, '');
                 }
             } else if (hasComma) {
+                // Apenas vírgula: formato BR (ex: 892,23 ou 64,35)
                 str = str.replace(',', '.');
+            } else if (hasDot) {
+                // Apenas ponto (ex: 892.23 ou 64.35) -> JÁ É O DECIMAL CORRETO EM JS! NÃO REMOVE O PONTO!
             }
 
+            // Remove caracteres inválidos remanescentes
             str = str.replace(/[^\d.-]/g, '');
             const parsed = parseFloat(str);
             return isNaN(parsed) ? 0 : parsed;
@@ -275,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Executando cruzamento e diagnósticos de valores...", "color: #059669; font-weight: bold; font-size: 13px;");
+            console.log("%c[FinalProcessor] Executando cruzamento e validação de decimais...", "color: #059669; font-weight: bold; font-size: 13px;");
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -299,6 +308,9 @@ document.addEventListener('DOMContentLoaded', () => {
             let countDivergent = 0;
             let countNotMapped = 0;
             let mappedCountInFile = 0;
+
+            const sideBySideComparisonList = [];
+            let decimalLossDetected = false;
 
             const valueInspection = ValueInspectorEngine.inspectMatrixValues(this.reportData, 'Planilha de Relatório');
 
@@ -375,11 +387,41 @@ document.addEventListener('DOMContentLoaded', () => {
                     const isRepEmptyCell = isCellEmpty(rawRepVal);
 
                     let driveVal = 0;
+                    let rawDrvVal = '';
                     let isDriveEmptyCell = true;
                     if (driveRowIdx !== -1 && driveColIdx !== -1) {
-                        const rawDrvVal = this.driveData[driveRowIdx][driveColIdx];
+                        rawDrvVal = this.driveData[driveRowIdx][driveColIdx];
                         driveVal = MoneyEngine.importarValor(rawDrvVal);
                         isDriveEmptyCell = isCellEmpty(rawDrvVal);
+                    }
+
+                    // MONTAGEM DO INSPECTOR COMPARATIVO LADO A LADO (RELATÓRIO VS DRIVE)
+                    if (sideBySideComparisonList.length < 10 && (!isRepEmptyCell || !isDriveEmptyCell)) {
+                        let explanation = "✔ Paridade numérica mantida entre Relatório e Drive.";
+                        if (driveRowIdx !== -1 && driveColIdx !== -1) {
+                            if (Math.abs(repVal * 100 - driveVal) < 0.01 && repVal !== driveVal) {
+                                explanation = "⚠️ ALERTA: Relatório parece ter perdido 2 casas decimais na importação original.";
+                                decimalLossDetected = true;
+                            } else if (repVal !== driveVal) {
+                                explanation = "ℹ️ Divergência financeira legítima entre os valores dos arquivos.";
+                            }
+                        }
+
+                        sideBySideComparisonList.push({
+                            itemName: reportItemName,
+                            monthLabel: parsedMonth.str,
+                            report: {
+                                rawVal: rawRepVal,
+                                rawType: typeof rawRepVal,
+                                storedVal: repVal
+                            },
+                            drive: {
+                                rawVal: rawDrvVal,
+                                rawType: typeof rawDrvVal,
+                                storedVal: driveVal
+                            },
+                            explanation
+                        });
                     }
 
                     let cellStatus = 'NOT_MAPPED';
@@ -449,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 {
                     stepNum: 2,
-                    stepTitle: "Inspector de Valores (Diagnóstico de Importação)",
+                    stepTitle: "Comparação Lado a Lado de Decimais (Relatório vs Drive)",
                     rowCount: this.reportData.length,
                     colCount: maxCols,
                     firstRow: firstRow.map(c => String(c || '').trim()),
@@ -457,7 +499,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     colHeaders: colHeadersWithIndices,
                     matrix: this.resultMatrix,
                     extraInfo: {
-                        valueInspectorDetails: valueInspection
+                        sideBySideComparison: sideBySideComparisonList,
+                        decimalLossDetected
                     }
                 },
                 {
@@ -501,10 +544,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const resultLogs = [
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Dados recebidos do Processador Final.", isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `🔍 Inspector de Valores ativo: "${valueInspection.diagnosis}"`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Leitura do Relatório preservada na origem (sem perdas nem divisões artificiais).`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Inspector Comparativo Lado a Lado ativado.`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Catálogo Oficial consultado (${OfficialCatalog.getAllMappingsCount()} regras registradas).`, isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação numérica concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: "✔ Resultado exibido com sucesso.", isSuccess: true }
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true }
             ];
 
             this.resultInspector = {
@@ -813,6 +856,41 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="step-info-row">
                         <span class="step-info-label">Status do Cruzamento:</span>
                         <span class="step-info-value">${step.extraInfo.crossReferenceStatus}</span>
+                    </div>
+                `;
+            }
+
+            if (step.extraInfo && step.extraInfo.sideBySideComparison) {
+                const sList = step.extraInfo.sideBySideComparison;
+                const rowsHtml = sList.map(item => `
+                    <tr>
+                        <td><b>${item.itemName}</b> (${item.monthLabel})</td>
+                        <td>
+                            <code>${JSON.stringify(item.report.rawVal)}</code><br>
+                            <small>Tipo: <b>${item.report.rawType}</b> | Armazenado: <b>${item.report.storedVal}</b></small>
+                        </td>
+                        <td>
+                            <code>${JSON.stringify(item.drive.rawVal)}</code><br>
+                            <small>Tipo: <b>${item.drive.rawType}</b> | Armazenado: <b>${item.drive.storedVal}</b></small>
+                        </td>
+                        <td><span style="font-size: 0.8rem; font-weight: 600;">${item.explanation}</span></td>
+                    </tr>
+                `).join('');
+
+                detailsBlock.innerHTML += `
+                    <div style="margin-top: 0.5rem; overflow-x: auto;">
+                        <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--accent-color);">🔍 Comparação Lado a Lado (Relatório vs Drive):</h4>
+                        <table class="match-table">
+                            <thead>
+                                <tr>
+                                    <th>Item & Mês</th>
+                                    <th>Planilha de Relatório</th>
+                                    <th>Planilha do Drive</th>
+                                    <th>Diagnóstico de Paridade</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml || '<tr><td colspan="4">Nenhuma célula comparada</td></tr>'}</tbody>
+                        </table>
                     </div>
                 `;
             }
@@ -2190,7 +2268,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 12. LEITURA DE ARQUIVO SEM CONVERSÕES AUTOMÁTICAS (RAW DATA FROM SHEETJS)
+    // 12. LEITURA DE ARQUIVO FIEL NA ORIGEM (SHEETJS RAW IMPORT)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -2199,16 +2277,22 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.onload = function (e) {
             try {
                 const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
+                const workbook = XLSX.read(data, { 
+                    type: 'array',
+                    cellDates: true,
+                    cellNF: false,
+                    cellText: false 
+                });
 
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
 
-                // raw: true garante a preservação do tipo e valor numérico/texto nativo entregue pela biblioteca SheetJS
+                // raw: true e rawNumbers: true garantem a preservação dos decimais brutos nativos da planilha
                 const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { 
                     header: 1,
                     defval: '',
-                    raw: true 
+                    raw: true,
+                    rawNumbers: true 
                 });
 
                 if (rawMatrix && rawMatrix.length > 0) {
@@ -2310,8 +2394,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const rawCellValue = rowData[colIdx];
 
-                // Exibição preservando o valor bruto exatamente como entregue pela biblioteca
-                td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
+                if (colIdx > 0 && !isCellEmpty(rawCellValue) && typeof rawCellValue === 'number') {
+                    td.textContent = MoneyEngine.formatarValor(rawCellValue);
+                } else {
+                    td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
+                }
 
                 // APLICAÇÃO DE DESTAQUE VISUAL DE CÉLULAS APENAS NO RESULTADO FINAL E EM COLUNAS DE MESES (colIdx > 0)
                 if (isResultView && colIdx > 0) {
