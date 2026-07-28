@@ -1,12 +1,12 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Inspector do Pipeline & Auditoria Visual)
+ * Importador de Planilhas - app.js (Teste de Hipótese: 4 Linhas Iniciais)
  * ----------------------------------------------------------------------------
  * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, escolha do
  * tipo de planilha, tratamento via pipeline e Inspetor do Pipeline (9 Etapas).
  * 
  * Arquitetura em Módulos:
- * 1. Mapeamento & Utilidades (Header Normalization & Number Utilities)
+ * 1. Mapeamento & Configurações (Central Config, Header Normalization & Number Utilities)
  * 2. Módulo Inspetor do Pipeline (Pipeline Inspector Engine - 9 Etapas)
  * 3. Módulo de Diagnóstico Rápido (Debug & Diagnostic Engine)
  * 4. Motor de Regras & Pipelines (Treatment Pipeline Engine)
@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedType: null,
         summaryData: {},
         isDebugMode: false,
-        activeTab: 'viewer' // 'viewer' ou 'inspector'
+        activeTab: 'viewer'
     };
 
     // Objeto do Inspetor do Pipeline (Inspector State - 9 Etapas)
@@ -95,12 +95,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 1. MAPEAMENTO & UTILIDADES (Header Normalization & Number Utilities)
+    // 1. MAPEAMENTO & CONFIGURAÇÕES (Central Config & Utilities)
     // ------------------------------------------------------------------------
 
     /**
+     * CONFIGURAÇÃO CENTRALIZADA: Quantidade de linhas iniciais a remover do topo.
+     * Alterável para testes de hipóteses estruturais.
+     */
+    const LINHAS_INICIAIS_REMOVIDAS = 4;
+
+    /**
      * Tabela Oficial de Padronização de Nomes das Colunas (Regra 5).
-     * Editável pelo usuário conforme necessário.
      */
     const COLUMN_NAME_MAP = {
         'COM_INCP_AGENTES': 'Remuneração a Pessoal Estatutário (ACS)',
@@ -199,13 +204,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    /**
-     * Captura o instantâneo completo de dados de uma determinada etapa do pipeline.
-     */
     function recordStepSnapshot(stepNum, stepTitle, matrix, extraInfo = {}) {
         if (!matrix) matrix = [];
 
-        // Cópia profunda da matriz para preservar o estado exato naquele instante
         const matrixCopy = matrix.map(r => [...r]);
         let maxCols = 0;
         matrixCopy.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
@@ -239,9 +240,6 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorData.steps[stepNum - 1] = snapshot;
     }
 
-    /**
-     * Renderiza dinamicamente a interface do Inspector do Pipeline (Aba 2).
-     */
     function renderInspectorUI() {
         inspectorStepsContainer.innerHTML = '';
         inspectorLogTimeline.innerHTML = '';
@@ -257,14 +255,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fragment = document.createDocumentFragment();
 
-        // RENDERIZA OS CARDS DAS 9 ETAPAS
         inspectorData.steps.forEach(step => {
             if (!step) return;
 
             const card = document.createElement('div');
             card.className = 'inspector-step-card';
 
-            // Cabeçalho do Card
             const cardHeader = document.createElement('div');
             cardHeader.className = 'step-card-header';
             cardHeader.innerHTML = `
@@ -279,11 +275,9 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             card.appendChild(cardHeader);
 
-            // Bloco de Informações da Etapa
             const detailsBlock = document.createElement('div');
             detailsBlock.className = 'step-details-block';
 
-            // Primeira Linha / Cabeçalho
             const firstRowStr = step.firstRow.length > 0 ? step.firstRow.join(' | ') : '(Vazia)';
             const lastRowStr = step.lastRow.length > 0 ? step.lastRow.join(' | ') : '(Vazia)';
 
@@ -298,9 +292,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // CONTEÚDO ESPECÍFICO DE CADA ETAPA
-
-            // Etapa 3: Colunas Vazias Removidas
             if (step.stepNum === 3 && step.extraInfo.removedEmptyCols) {
                 detailsBlock.innerHTML += `
                     <div class="step-info-row">
@@ -310,7 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // Etapa 4: Colunas J, I, H, G, A Removidas
             if (step.stepNum === 4 && step.extraInfo.removedSpecificCols) {
                 const mappingsStr = step.extraInfo.removedSpecificCols.map(m => `<b>${m.letter}</b> → "${m.name}"`).join(', ');
                 detailsBlock.innerHTML += `
@@ -321,7 +311,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // Etapa 6: Tabela Comparativa de Match de Nomes
             if (step.stepNum === 6 && step.extraInfo.matchTable) {
                 const matchTableHtml = `
                     <div style="margin-top: 0.5rem; overflow-x: auto;">
@@ -353,7 +342,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 detailsBlock.innerHTML += matchTableHtml;
             }
 
-            // Etapa 7: Lista de Renomeações
             if (step.stepNum === 7 && step.extraInfo.renamedList) {
                 if (step.extraInfo.renamedList.length > 0) {
                     const renameStr = step.extraInfo.renamedList.map(r => `<div><b>Coluna ${r.letter}:</b> "${r.original}" ➔ <strong>"${r.renamed}"</strong></div>`).join('');
@@ -373,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Etapa 8: Agrupamento por Categoria
             if (step.stepNum === 8 && step.extraInfo.groupedCategories) {
                 const groupHtml = step.extraInfo.groupedCategories.map(g => `
                     <div style="padding: 0.5rem; background: var(--bg-primary); border-radius: 6px; margin-bottom: 0.35rem;">
@@ -389,7 +376,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // Etapa 9: Somas Detalhadas por Categoria
             if (step.stepNum === 9 && step.extraInfo.equations) {
                 const eqHtml = step.extraInfo.equations.map(eq => `
                     <div class="equation-card-item">
@@ -408,7 +394,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             card.appendChild(detailsBlock);
 
-            // Tabela de Prévia da Matriz Naquele Momento da Etapa
             const tableContainer = document.createElement('div');
             tableContainer.className = 'step-table-wrapper';
             tableContainer.innerHTML = buildStepTablePreviewHtml(step.matrix);
@@ -419,7 +404,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         inspectorStepsContainer.appendChild(fragment);
 
-        // RENDERIZA A LINHA DO TEMPO CRONOLÓGICA DE LOGS
         const logFragment = document.createDocumentFragment();
 
         inspectorData.timelineLogs.forEach(log => {
@@ -442,16 +426,12 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectorLogTimeline.appendChild(logFragment);
     }
 
-    /**
-     * Constrói o HTML de uma tabela de visualização prévia da matriz em um determinado momento.
-     */
     function buildStepTablePreviewHtml(matrix) {
         if (!matrix || matrix.length === 0) return '<div style="padding: 1rem; text-align: center; color: var(--text-muted);">Matriz Vazia</div>';
 
         let maxCols = 0;
         matrix.forEach(row => { if (row.length > maxCols) maxCols = row.length; });
 
-        // Limita a exibição das primeiras 8 linhas para não pesadear o Inspector
         const previewRows = matrix.slice(0, 8);
 
         let html = '<table class="inspector-preview-table"><thead><tr><th>#</th>';
@@ -584,20 +564,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. MOTOR DE REGRAS & PIPELINES (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
-    // ETAPA 2: Remover 3 primeiras linhas
-    function removeTopRowsRule(matrix, count = 3) {
+    /**
+     * ETAPA 2: Remover as `count` primeiras linhas (Configurável via LINHAS_INICIAIS_REMOVIDAS).
+     */
+    function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
         if (!matrix || matrix.length <= count) {
             debugContext.removedTopRowsCount = matrix ? matrix.length : 0;
             const res = [];
-            recordStepSnapshot(2, "Após remover as três primeiras linhas", res);
-            addInspectorLog("3 primeiras linhas removidas do topo da planilha.");
+            recordStepSnapshot(2, `Após remover as ${count} primeiras linhas`, res);
+            addInspectorLog(`${count} primeiras linhas removidas do topo da planilha.`);
             return res;
         }
 
         debugContext.removedTopRowsCount = count;
         const res = matrix.slice(count);
-        recordStepSnapshot(2, "Após remover as três primeiras linhas", res);
-        addInspectorLog("✔ 3 primeiras linhas removidas.");
+
+        recordStepSnapshot(2, `Após remover as ${count} primeiras linhas`, res);
+        addInspectorLog(`✔ ${count} primeiras linhas removidas.`);
         return res;
     }
 
@@ -748,7 +731,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const origStr = String(cell).trim();
             const normCell = normalizeHeaderName(cell);
 
-            // Procura o nome esperado correspondente nas chaves do dicionário
             const expectedKey = Object.keys(nameMap).find(k => normalizeHeaderName(k) === normCell);
             const isFound = Boolean(normalizedMap[normCell]);
 
@@ -778,13 +760,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return cell;
         });
 
-        // Grava o snapshot da ETAPA 6 (Antes da renomeação - Tabela Comparativa)
         recordStepSnapshot(6, "Antes da renomeação das colunas (Mapeamento)", matrix, {
             matchTable
         });
         addInspectorLog("✔ Correspondência de cabeçalhos avaliada.");
 
-        // Identifica colunas ausentes
         Object.keys(COLUMN_NAME_MAP).forEach(key => {
             const normKey = normalizeHeaderName(key);
             if (!foundNormalizedKeys.has(normKey)) {
@@ -796,13 +776,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updatedMatrix[0] = newHeaderRow;
 
-        // Justificativa detalhada se nenhuma coluna foi renomeada
         let explanation = '';
         if (renamedList.length === 0) {
             explanation = `Motivo: Nenhum dos cabeçalhos encontrados na 1ª linha (ex: ${officialHeaderRow.slice(0, 5).map(c => `"${c}"`).join(', ')}) coincidiu com as chaves esperadas (${Object.keys(COLUMN_NAME_MAP).slice(0, 5).join(', ')}...).`;
         }
 
-        // Grava o snapshot da ETAPA 7 (Após a tentativa de renomeação)
         recordStepSnapshot(7, "Após a tentativa de renomeação", updatedMatrix, {
             renamedList,
             explanation
@@ -817,9 +795,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return updatedMatrix;
     }
 
+    /**
+     * Sequência Oficial Estrita do Pipeline da Planilha do SIGA.
+     * Utiliza LINHAS_INICIAIS_REMOVIDAS (4) para a Regra 1.
+     */
     const SPREADSHEET_PIPELINES = {
         siga: [
-            (matrix) => removeTopRowsRule(matrix, 3),                                        // 1. ETAPA 2
+            (matrix) => removeTopRowsRule(matrix, LINHAS_INICIAIS_REMOVIDAS),                // 1. ETAPA 2 (Remover 4 primeiras linhas)
             (matrix) => removeEmptyColumnsRule(matrix),                                       // 2. ETAPA 3
             (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // 3. ETAPA 4
             (matrix) => removeBottomRowsRule(matrix, 2),                                      // 4. ETAPA 5
@@ -853,7 +835,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const equations = [];
         debugContext.groupedCategoriesLog = [];
 
-        // ETAPA 8: Agrupamento
         validStandardNames.forEach(stdName => {
             const matchingCols = [];
             headerRow.forEach((colName, colIdx) => {
@@ -876,7 +857,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         addInspectorLog(`✔ Agrupamento de ${groupedCategories.length} categorias de colunas concluído.`);
 
-        // ETAPA 9: Somas por Categoria
         headerRow.forEach((colName, colIdx) => {
             const trimmedName = String(colName).trim();
 
@@ -894,7 +874,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     categorySumForCol += numVal;
                 });
 
-                // Registra dados para a equação
                 let eq = equations.find(e => e.categoryName === trimmedName);
                 if (!eq) {
                     eq = { categoryName: trimmedName, colDetails: [], total: 0 };
@@ -982,25 +961,20 @@ document.addEventListener('DOMContentLoaded', () => {
         appState.selectedType = 'siga';
         closeTypeModal();
 
-        // ETAPA 1: Grava a planilha original lida pelo SheetJS
         recordStepSnapshot(1, "Planilha original importada", appState.rawMatrixData);
         addInspectorLog("✔ Arquivo lido e carregado com sucesso pelo SheetJS.");
 
-        // 1. Executa o pipeline de tratamento do SIGA (Passos 1 a 5, gravando snapshots)
         const treated = runTreatmentPipeline('siga', appState.rawMatrixData);
         appState.treatedMatrixData = treated;
 
-        // 2. Calcula o Resumo Financeiro e Somatórios (Grava Etapas 8 e 9)
         const summaryData = calculateFinancialSummary(treated);
         appState.summaryData = summaryData;
 
-        // 3. Renderiza a visualização principal, os cards e o Inspector
         renderFinancialSummaryCards(summaryData);
         renderSpreadsheetTable(treated);
         renderDebugPanel();
         renderInspectorUI();
 
-        // Exibe a barra de abas de navegação
         viewTabsBar.classList.remove('hidden');
     }
 
@@ -1132,7 +1106,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tableWrapper.classList.add('hidden');
         debugPanel.classList.add('hidden');
 
-        // Volta para a aba padrão
         appState.activeTab = 'viewer';
         btnTabViewer.classList.add('active');
         btnTabInspector.classList.remove('active');
@@ -1208,7 +1181,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (row.length > maxCols) maxCols = row.length;
         });
 
-        // --- A. Renderiza o Cabeçalho ---
         const trHead = document.createElement('tr');
         
         const thCorner = document.createElement('th');
@@ -1248,7 +1220,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tableHead.appendChild(trHead);
 
-        // --- B. Renderiza o Corpo da Tabela ---
         const bodyRows = matrix.slice(1);
         const fragment = document.createDocumentFragment();
 
