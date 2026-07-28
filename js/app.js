@@ -1,9 +1,9 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Estilo Excel / Google Sheets + Pipeline SIGA)
+ * Importador de Planilhas - app.js (Estilo Excel / Google Sheets + Pipeline SIGA Completo)
  * ----------------------------------------------------------------------------
- * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, seleção de
- * tipo de planilha (Modal) e pipeline modular de tratamento de dados.
+ * Aplicação estática em JavaScript Puro (Vanilla JS) para leitura, escolha do
+ * tipo de planilha e execução do pipeline de tratamento de dados.
  * 
  * Arquitetura em Módulos:
  * 1. Utilidades de Planilha (Excel Utilities)
@@ -66,6 +66,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Converte uma letra de coluna do Excel (A, B, C... Z, AA...) em seu índice numérico zero-based.
+     * Exemplo: 'A' -> 0, 'G' -> 6, 'H' -> 7, 'I' -> 8, 'J' -> 9.
+     * @param {string} letter 
+     * @returns {number}
+     */
+    function excelColumnNameToIndex(letter) {
+        const cleanLetter = String(letter).trim().toUpperCase();
+        let index = 0;
+        for (let i = 0; i < cleanLetter.length; i++) {
+            index = index * 26 + (cleanLetter.charCodeAt(i) - 64);
+        }
+        return index - 1;
+    }
+
+    /**
      * Verifica se um valor de célula é considerado totalmente vazio.
      * Células nulas, indefinidas, string vazia ("") ou contendo apenas espaços são vazias.
      * @param {any} value 
@@ -83,11 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Regra 1: Remove completamente as `count` primeiras linhas da planilha.
-     * A nova primeira linha passa a ser a nova 1ª linha (cabeçalho).
-     * 
-     * @param {Array<Array<any>>} matrix - Matriz bidimensional de dados.
-     * @param {number} count - Quantidade de linhas a remover do topo.
-     * @returns {Array<Array<any>>} Matriz com as linhas removidas.
+     * @param {Array<Array<any>>} matrix 
+     * @param {number} count 
+     * @returns {Array<Array<any>>}
      */
     function removeTopRowsRule(matrix, count = 3) {
         if (!matrix || matrix.length <= count) {
@@ -98,21 +111,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Regra 2: Remove todas as colunas que estejam COMPLETAMENTE vazias.
-     * Uma coluna é totalmente vazia quando TODAS as suas células forem vazias.
-     * 
-     * @param {Array<Array<any>>} matrix - Matriz bidimensional de dados.
-     * @returns {Array<Array<any>>} Matriz sem as colunas vazias.
+     * @param {Array<Array<any>>} matrix 
+     * @returns {Array<Array<any>>}
      */
     function removeEmptyColumnsRule(matrix) {
         if (!matrix || matrix.length === 0) return [];
 
-        // Descobre a quantidade máxima de colunas existentes
         let maxCols = 0;
         matrix.forEach(row => {
             if (row.length > maxCols) maxCols = row.length;
         });
 
-        // Identifica quais colunas possuem pelo menos 1 valor não-vazio
         const nonArrayColIndices = [];
         for (let colIdx = 0; colIdx < maxCols; colIdx++) {
             let hasContent = false;
@@ -128,7 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Filtra a matriz mantendo apenas os índices de colunas com conteúdo
         const cleanMatrix = matrix.map(row => {
             return nonArrayColIndices.map(colIdx => row[colIdx]);
         });
@@ -137,24 +145,81 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Regra 3: Remover colunas por letras em uma ordem específica.
+     * Exemplo: ['J', 'I', 'H', 'G', 'A'].
+     * A ordem decrescente é fundamental para evitar alteração dos índices restantes.
+     * Caso a coluna não exista na matriz atual, a remoção é ignorada.
+     * 
+     * @param {Array<Array<any>>} matrix 
+     * @param {Array<string>} lettersOrder - Lista de letras na ordem exata de remoção
+     * @returns {Array<Array<any>>}
+     */
+    function removeSpecificColumnsByLetterRule(matrix, lettersOrder = ['J', 'I', 'H', 'G', 'A']) {
+        if (!matrix || matrix.length === 0) return [];
+
+        // Cria uma cópia profunda/superficial das linhas da matriz
+        let currentMatrix = matrix.map(row => [...row]);
+
+        lettersOrder.forEach(letter => {
+            const targetIdx = excelColumnNameToIndex(letter);
+
+            // Verifica se o índice existe na matriz atual
+            if (targetIdx >= 0) {
+                // Descobre se a matriz possui largura suficiente para essa coluna
+                let currentMaxCols = 0;
+                currentMatrix.forEach(row => {
+                    if (row.length > currentMaxCols) currentMaxCols = row.length;
+                });
+
+                if (targetIdx < currentMaxCols) {
+                    // Remove a coluna `targetIdx` de todas as linhas
+                    currentMatrix = currentMatrix.map(row => {
+                        const newRow = [...row];
+                        newRow.splice(targetIdx, 1);
+                        return newRow;
+                    });
+                }
+            }
+        });
+
+        return currentMatrix;
+    }
+
+    /**
+     * Regra 4: Remover as `count` últimas linhas da planilha.
+     * Sempre remove as duas últimas linhas. Se houver 2 ou menos linhas, esvazia.
+     * 
+     * @param {Array<Array<any>>} matrix 
+     * @param {number} count - Quantidade de linhas do final a remover
+     * @returns {Array<Array<any>>}
+     */
+    function removeBottomRowsRule(matrix, count = 2) {
+        if (!matrix || matrix.length <= count) {
+            return [];
+        }
+        return matrix.slice(0, matrix.length - count);
+    }
+
+    /**
      * Registro de Pipelines de Tratamento por Tipo de Planilha.
-     * Arquitetura preparada para adicionar novos tipos e regras facilmente.
      */
     const SPREADSHEET_PIPELINES = {
-        // Fluxo Planilha do SIGA: Executa Regra 1 e Regra 2
+        // Fluxo "Planilha do SIGA": Executa em ordem estrita Regras 1, 2, 3 e 4
         siga: [
-            (matrix) => removeTopRowsRule(matrix, 3),
-            (matrix) => removeEmptyColumnsRule(matrix)
+            (matrix) => removeTopRowsRule(matrix, 3),                                        // Regra 1
+            (matrix) => removeEmptyColumnsRule(matrix),                                       // Regra 2
+            (matrix) => removeSpecificColumnsByLetterRule(matrix, ['J', 'I', 'H', 'G', 'A']), // Regra 3
+            (matrix) => removeBottomRowsRule(matrix, 2)                                      // Regra 4
         ],
-        // Fluxo Planilha de Relatório (Reservado para versões futuras)
+        // Fluxo "Planilha de Relatório" (Reservado para versões futuras)
         relatorio: []
     };
 
     /**
      * Executa o pipeline de tratamento correspondente ao tipo de planilha selecionado.
-     * @param {string} sheetType - 'siga' ou 'relatorio'
-     * @param {Array<Array<any>>} rawMatrix - Matriz de dados brutos
-     * @returns {Array<Array<any>>} Matriz tratada
+     * @param {string} sheetType 
+     * @param {Array<Array<any>>} rawMatrix 
+     * @returns {Array<Array<any>>}
      */
     function runTreatmentPipeline(sheetType, rawMatrix) {
         const pipeline = SPREADSHEET_PIPELINES[sheetType];
@@ -162,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return rawMatrix;
         }
 
-        // Executa as regras em sequência de forma pura (sem mutação colateral)
         return pipeline.reduce((currentMatrix, ruleFn) => ruleFn(currentMatrix), rawMatrix);
     }
 
@@ -170,57 +234,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. GERENCIAMENTO DO MODAL DE SELEÇÃO (Modal Controller)
     // ------------------------------------------------------------------------
 
-    /**
-     * Abre o modal para o usuário escolher o tipo da planilha.
-     */
     function openTypeModal() {
         hideModalAlert();
         typeSelectionModal.classList.remove('hidden');
     }
 
-    /**
-     * Fecha o modal de seleção.
-     */
     function closeTypeModal() {
         typeSelectionModal.classList.add('hidden');
         hideModalAlert();
     }
 
-    /**
-     * Exibe o aviso para fluxos ainda não implementados.
-     * @param {string} message 
-     */
     function showModalAlert(message) {
         modalAlertText.textContent = message;
         modalAlert.classList.remove('hidden');
     }
 
-    /**
-     * Oculta o aviso do modal.
-     */
     function hideModalAlert() {
         modalAlert.classList.add('hidden');
     }
 
-    /**
-     * Trata a seleção da opção "Planilha de Relatório".
-     */
     function handleSelectRelatorio() {
         showModalAlert("Este fluxo será implementado em uma versão futura.");
     }
 
-    /**
-     * Trata a seleção da opção "Planilha do SIGA".
-     */
     function handleSelectSiga() {
         appState.selectedType = 'siga';
         closeTypeModal();
 
-        // Inicia o pipeline de tratamento do SIGA
+        // Executa o pipeline expandido do SIGA (Regras 1, 2, 3 e 4)
         const treated = runTreatmentPipeline('siga', appState.rawMatrixData);
         appState.treatedMatrixData = treated;
 
-        // Renderiza a matriz resultante na tabela
+        // Renderiza a tabela final com os dados tratados
         renderSpreadsheetTable(treated);
     }
 
@@ -236,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dropZone.addEventListener('dragleave', handleDragLeave);
         dropZone.addEventListener('drop', handleDrop);
 
-        // Eventos do Modal
         modalCloseBtn.addEventListener('click', () => {
             closeTypeModal();
             if (appState.treatedMatrixData.length === 0) {
@@ -342,7 +386,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (rawMatrix && rawMatrix.length > 0) {
                     appState.rawMatrixData = rawMatrix;
-                    // Abre o modal para escolha do tipo ANTES de qualquer processamento ou exibição
                     openTypeModal();
                 } else {
                     alert('A planilha selecionada não possui dados.');
@@ -376,13 +419,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Descobre a quantidade de colunas da matriz tratada
         let maxCols = 0;
         matrix.forEach(row => {
             if (row.length > maxCols) maxCols = row.length;
         });
 
-        // --- A. Renderiza a Linha de Cabeçalho (Letras + Nome Inteligente) ---
+        // --- A. Renderiza o Cabeçalho (Letras + Nome Inteligente) ---
         const trHead = document.createElement('tr');
         
         const thCorner = document.createElement('th');
@@ -390,7 +432,6 @@ document.addEventListener('DOMContentLoaded', () => {
         thCorner.textContent = '#';
         trHead.appendChild(thCorner);
 
-        // A primeira linha da matriz tratada torna-se o cabeçalho
         const firstRowData = matrix[0] || [];
 
         for (let colIdx = 0; colIdx < maxCols; colIdx++) {
@@ -431,13 +472,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = document.createElement('tr');
             tr.dataset.rowIndex = rowIdx + 1;
 
-            // Coluna Fixa do Número da Linha
             const thRowIndex = document.createElement('th');
             thRowIndex.className = 'row-index';
             thRowIndex.textContent = rowIdx + 1;
             tr.appendChild(thRowIndex);
 
-            // Células de Dados
             for (let colIdx = 0; colIdx < maxCols; colIdx++) {
                 const td = document.createElement('td');
                 td.dataset.colIndex = colIdx;
