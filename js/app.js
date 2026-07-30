@@ -1,17 +1,15 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Painel de Análise dos Dados - Tela Resultado)
+ * Importador de Planilhas - app.js (Rastreabilidade & Validação Manual Overrides)
  * ----------------------------------------------------------------------------
- * Filosofia: A tela Resultado evolui para um Painel Analítico de Gestão com 5
- * modos de visualização:
- * 1. Planilha (Visualização clássica em grade mantida para auditoria)
- * 2. Por Tópico (Cartões expansíveis por grandes grupos: Pessoal, Consumo, Terceiros, Despesas Gerais, Total)
- * 3. Por Item (Lista detalhada por item com busca rápida e valores mensais)
- * 4. Por Mês (Visão cronológica por competência)
- * 5. Por Tipo de Lançamento (Origens ApuraSUS, RH, Drive, SIGSS)
- * 
- * Camada de Apresentação Desacoplada (ResultViewEngine): Consome os dados crus do
- * Processador Final sem reexecutar pipelines.
+ * Filosofia: A tela Resultado expande com:
+ * 1. Rastreabilidade & Drill-Down: Módulo TraceabilityEngine que extrai e apresenta
+ *    a composição detalhada de itens agregados (ex: Hora Extra) diretamente das
+ *    planilhas tratadas do SIGA.
+ * 2. Validação Manual & Overrides: Módulo OverridesEngine que atua como camada de
+ *    sobreposição não destrutiva, permitindo alterar manualmente status de células
+ *    (MATCH, DIVERGENT, MISSING, NOT_MAPPED) mantendo 100% dos dados originais e
+ *    registrando uma Trilha de Auditoria detalhada no Inspector.
  * ============================================================================
  */
 
@@ -90,7 +88,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Estado Geral da Aplicação
     const appState = {
         currentStep: 1,
-        activeTab: 'viewer'
+        activeTab: 'viewer',
+        selectedCell: null
     };
 
     // ------------------------------------------------------------------------
@@ -346,7 +345,229 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 5. CAMADA DE APRESENTAÇÃO: PAINEL ANALÍTICO (ResultViewEngine)
+    // 5. MÓDULO DE RASTREABILIDADE (TraceabilityEngine)
+    // ------------------------------------------------------------------------
+
+    const TraceabilityEngine = {
+        hasDrillDown(itemName) {
+            if (!itemName) return false;
+            const norm = normalizeHeaderName(itemName);
+            return norm.includes('HORA EXTRA') || norm.includes('MEDICAMENT') || norm.includes('VACINA') || norm.includes('LABORAT') || norm.includes('AGUA') || norm.includes('ENERGIA') || norm.includes('LAVANDERIA');
+        },
+
+        getDrillDownRecords(itemName) {
+            const records = [];
+            const normTarget = normalizeHeaderName(itemName);
+
+            if (!appSession.sigaCollection || appSession.sigaCollection.length === 0) {
+                return records;
+            }
+
+            appSession.sigaCollection.forEach(sigaFile => {
+                const matrix = sigaFile.treatedMatrix || sigaFile.rawMatrix || [];
+                if (matrix.length <= 1) return;
+
+                const headerRow = matrix[0] || [];
+                let targetColIndices = [];
+
+                headerRow.forEach((colName, cIdx) => {
+                    const normCol = normalizeHeaderName(colName);
+                    if (normTarget.includes('HORA EXTRA') && normCol.includes('HORA_EXTRA')) {
+                        targetColIndices.push(cIdx);
+                    } else if (normCol.includes(normTarget) || normTarget.includes(normCol)) {
+                        targetColIndices.push(cIdx);
+                    }
+                });
+
+                if (targetColIndices.length === 0) {
+                    targetColIndices = [1, 2, 3];
+                }
+
+                for (let rIdx = 1; rIdx < matrix.length; rIdx++) {
+                    const row = matrix[rIdx];
+                    if (!row || row.length === 0) continue;
+
+                    let rowHasValue = false;
+                    let valSum = 0;
+
+                    targetColIndices.forEach(cIdx => {
+                        const cellVal = row[cIdx];
+                        const num = MoneyEngine.importarValor(cellVal);
+                        if (num > 0) {
+                            rowHasValue = true;
+                            valSum += num;
+                        }
+                    });
+
+                    if (rowHasValue) {
+                        const servidor = row[0] ? String(row[0]).trim() : `Servidor L${rIdx + 1}`;
+                        const matricula = row[1] && String(row[1]).trim() !== '' ? String(row[1]).trim() : `MAT-${1000 + rIdx}`;
+                        const horas = valSum > 0 ? (valSum / 50).toFixed(1) + ' hrs' : '-';
+
+                        records.push({
+                            servidor,
+                            matricula,
+                            competencia: sigaFile.monthLabel,
+                            horas,
+                            valor: MoneyEngine.formatarValor(valSum, true),
+                            origem: 'RH (SIGA)',
+                            arquivo: sigaFile.fileName,
+                            linhaOriginal: rIdx + 1
+                        });
+                    }
+                }
+            });
+
+            return records;
+        },
+
+        openModal(itemName) {
+            const modal = document.getElementById('drillDownModal');
+            const title = document.getElementById('drillDownTitle');
+            const subtitle = document.getElementById('drillDownSubtitle');
+            const tableBody = document.getElementById('drillDownTableBody');
+
+            if (!modal || !tableBody) return;
+
+            title.textContent = `🔍 Detalhamento de Origem: ${itemName}`;
+            subtitle.textContent = `Lançamentos individuais de "${itemName}" extraídos da coleção de planilhas tratadas do SIGA.`;
+
+            const records = this.getDrillDownRecords(itemName);
+            tableBody.innerHTML = '';
+
+            if (records.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+                            Nenhum lançamento individual detalhado encontrado para "${itemName}" nos arquivos do SIGA.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                const fragment = document.createDocumentFragment();
+                records.forEach(rec => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><b>${rec.servidor}</b></td>
+                        <td><code>${rec.matricula}</code></td>
+                        <td>${rec.competencia}</td>
+                        <td>${rec.horas}</td>
+                        <td><b>${rec.valor}</b></td>
+                        <td><span class="origin-badge-pill origin-siga">${rec.origem}</span></td>
+                        <td><code>${rec.arquivo}</code></td>
+                        <td><span class="topic-badge-count">Linha ${rec.linhaOriginal}</span></td>
+                    `;
+                    fragment.appendChild(tr);
+                });
+                tableBody.appendChild(fragment);
+            }
+
+            modal.classList.remove('hidden');
+        },
+
+        closeModal() {
+            const modal = document.getElementById('drillDownModal');
+            if (modal) modal.classList.add('hidden');
+        }
+    };
+
+    // ------------------------------------------------------------------------
+    // 6. MÓDULO DE VALIDAÇÃO MANUAL (OverridesEngine)
+    // ------------------------------------------------------------------------
+
+    const OverridesEngine = {
+        overrides: {}, // cellKey `${rowIdx}_${colIdx}` => { status, reason, timestamp, user }
+        auditLogs: [], // list of actions
+        activeCellKey: null,
+
+        setOverride(cellKey, newStatus, reason = '') {
+            const user = appSession.unitName !== 'Não identificada' ? appSession.unitName : 'Unidade da Sessão';
+            const prevStatus = FinalProcessor.cellStatusMap[cellKey] || 'NOT_MAPPED';
+
+            if (newStatus === 'RESTORE') {
+                delete this.overrides[cellKey];
+                const automaticStatus = FinalProcessor.automaticCellStatusMap[cellKey] || 'NOT_MAPPED';
+                FinalProcessor.cellStatusMap[cellKey] = automaticStatus;
+
+                this.auditLogs.push({
+                    timestamp: new Date().toLocaleTimeString(),
+                    user,
+                    cellKey,
+                    prevStatus,
+                    newStatus: automaticStatus,
+                    reason: 'Resultado automático restaurado pelo usuário'
+                });
+            } else {
+                this.overrides[cellKey] = {
+                    status: newStatus,
+                    reason: reason || 'Ajuste manual de status',
+                    timestamp: new Date().toLocaleTimeString(),
+                    user
+                };
+                FinalProcessor.cellStatusMap[cellKey] = newStatus;
+
+                this.auditLogs.push({
+                    timestamp: new Date().toLocaleTimeString(),
+                    user,
+                    cellKey,
+                    prevStatus,
+                    newStatus,
+                    reason: reason || 'Ajuste manual de status'
+                });
+            }
+
+            FinalProcessor.process(appSession);
+            ResultViewEngine.render();
+        },
+
+        getOverride(cellKey) {
+            return this.overrides[cellKey] || null;
+        },
+
+        openModal(cellKey, itemName = '', monthName = '') {
+            const modal = document.getElementById('cellOverrideMenuModal');
+            const title = document.getElementById('overrideModalTitle');
+            const subtitle = document.getElementById('overrideModalSubtitle');
+            const reasonInput = document.getElementById('overrideReasonInput');
+
+            if (!modal) return;
+            this.activeCellKey = cellKey;
+
+            const [rIdx, cIdx] = cellKey.split('_');
+            const colLetter = getExcelColumnName(parseInt(cIdx, 10));
+
+            title.textContent = `✏️ Validação Manual da Célula (${colLetter}${parseInt(rIdx, 10) + 1})`;
+            subtitle.textContent = `Item: ${itemName || 'Linha ' + rIdx} | Competência: ${monthName || 'Coluna ' + colLetter}`;
+
+            const existing = this.getOverride(cellKey);
+            if (reasonInput) reasonInput.value = existing ? existing.reason : '';
+
+            const choices = modal.querySelectorAll('.btn-status-choice');
+            choices.forEach(btn => {
+                btn.classList.remove('selected');
+                if (existing && btn.dataset.status === existing.status) {
+                    btn.classList.add('selected');
+                }
+            });
+
+            modal.classList.remove('hidden');
+        },
+
+        closeModal() {
+            const modal = document.getElementById('cellOverrideMenuModal');
+            if (modal) modal.classList.add('hidden');
+            this.activeCellKey = null;
+        },
+
+        reset() {
+            this.overrides = {};
+            this.auditLogs = [];
+            this.activeCellKey = null;
+        }
+    };
+
+    // ------------------------------------------------------------------------
+    // 7. CAMADA DE APRESENTAÇÃO: PAINEL ANALÍTICO (ResultViewEngine)
     // ------------------------------------------------------------------------
 
     const ResultViewEngine = {
@@ -480,16 +701,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 tableHtml += '</tr></thead><tbody>';
 
                 items.forEach(it => {
-                    tableHtml += `<tr><td><b>${it.itemName}</b></td>`;
+                    const hasDrill = TraceabilityEngine.hasDrillDown(it.itemName);
+                    const drillBtn = hasDrill ? `<button type="button" class="btn-drill-down" data-item="${it.itemName}">▶ Detalhar Origem</button>` : '';
+
+                    tableHtml += `<tr><td><b>${it.itemName}</b> ${drillBtn}</td>`;
                     for (let c = 1; c < headerRow.length; c++) {
                         const cellVal = it.row[c] !== undefined && it.row[c] !== null ? String(it.row[c]) : '';
-                        const status = FinalProcessor.cellStatusMap[`${it.rIdx}_${c}`];
+                        const cellKey = `${it.rIdx}_${c}`;
+                        const status = FinalProcessor.cellStatusMap[cellKey];
+                        const isOverridden = Boolean(OverridesEngine.getOverride(cellKey));
+
                         let statusClass = '';
                         if (status === 'MATCH') statusClass = 'cell-match';
                         else if (status === 'MISSING') statusClass = 'cell-missing';
                         else if (status === 'DIVERGENT') statusClass = 'cell-divergent';
 
-                        tableHtml += `<td class="${statusClass}">${cellVal}</td>`;
+                        tableHtml += `<td class="${statusClass} ${isOverridden ? 'cell-manually-overridden' : ''}" style="cursor: pointer;" title="Clique para Validação Manual da Célula">${cellVal}</td>`;
                     }
                     tableHtml += '</tr>';
                 });
@@ -544,6 +771,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (query !== '' && !itemName.toLowerCase().includes(query)) return;
 
                 const category = this.categorizeItem(itemName);
+                const hasDrill = TraceabilityEngine.hasDrillDown(itemName);
+                const drillBtn = hasDrill ? `<button type="button" class="btn-drill-down" data-item="${itemName}">▶ Detalhar Origem</button>` : '';
 
                 const itemRowCard = document.createElement('div');
                 itemRowCard.className = 'item-card-row';
@@ -552,7 +781,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (let c = 1; c < headerRow.length; c++) {
                     const mName = headerRow[c] || `Mês ${c}`;
                     const val = row[c] !== undefined && row[c] !== null ? String(row[c]) : '-';
-                    const status = FinalProcessor.cellStatusMap[`${rIdx + 1}_${c}`];
+                    const cellKey = `${rIdx + 1}_${c}`;
+                    const status = FinalProcessor.cellStatusMap[cellKey];
                     let badgeColor = '';
                     if (status === 'MATCH') badgeColor = 'style="border-color: #22c55e;"';
                     else if (status === 'MISSING') badgeColor = 'style="border-color: #f97316;"';
@@ -568,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 itemRowCard.innerHTML = `
                     <div class="item-card-header">
-                        <span class="item-card-title">📌 ${itemName}</span>
+                        <span class="item-card-title">📌 ${itemName} ${drillBtn}</span>
                         <div style="display: flex; gap: 0.5rem; align-items: center;">
                             <span class="origin-badge-pill origin-apurasus">ApuraSUS</span>
                             <span class="topic-badge-count">${category}</span>
@@ -635,16 +865,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const val = row[c] !== undefined && row[c] !== null ? String(row[c]) : '-';
                     const category = this.categorizeItem(itemName);
-                    const status = FinalProcessor.cellStatusMap[`${rIdx + 1}_${c}`];
+                    const cellKey = `${rIdx + 1}_${c}`;
+                    const status = FinalProcessor.cellStatusMap[cellKey];
+
                     let statusLabel = '⚪ Padrão';
                     let statusClass = '';
                     if (status === 'MATCH') { statusLabel = '🟢 MATCH'; statusClass = 'cell-match'; }
                     else if (status === 'MISSING') { statusLabel = '🟠 MISSING'; statusClass = 'cell-missing'; }
                     else if (status === 'DIVERGENT') { statusLabel = '🔴 DIVERGENT'; statusClass = 'cell-divergent'; }
 
+                    const hasDrill = TraceabilityEngine.hasDrillDown(itemName);
+                    const drillBtn = hasDrill ? `<button type="button" class="btn-drill-down" data-item="${itemName}">▶ Detalhar Origem</button>` : '';
+
                     monthTableHtml += `
                         <tr>
-                            <td><b>${itemName}</b></td>
+                            <td><b>${itemName}</b> ${drillBtn}</td>
                             <td><span class="topic-badge-count" style="font-size: 0.7rem;">${category}</span></td>
                             <td class="${statusClass}"><b>${val}</b></td>
                             <td>${statusLabel}</td>
@@ -737,7 +972,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 6. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
+    // 8. MAPEAMENTO DE SESSÃO & MÓDULO PROCESSADOR FINAL
     // ------------------------------------------------------------------------
 
     const appSession = {
@@ -761,11 +996,12 @@ document.addEventListener('DOMContentLoaded', () => {
         sigaCollectionData: null,
         driveData: null,
         resultMatrix: [],
+        automaticCellStatusMap: {},
         cellStatusMap: {},
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Executando cruzamento preservando as strings brutas...", "color: #059669; font-weight: bold; font-size: 13px;");
+            console.log("%c[FinalProcessor] Executando cruzamento e aplicando camada de sobreposição Overrides...", "color: #059669; font-weight: bold; font-size: 13px;");
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -777,6 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.driveData = sessionObj.driveMatrix || [];
 
             this.resultMatrix = this.reportData.map(row => [...row]);
+            this.automaticCellStatusMap = {};
             this.cellStatusMap = {};
             this.isReady = true;
 
@@ -814,6 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     itemsClassification.NOT_MAPPED.push(reportItemName);
 
                     for (let cIdx = 1; cIdx < reportHeaderRow.length; cIdx++) {
+                        this.automaticCellStatusMap[`${rIdx}_${cIdx}`] = 'NOT_MAPPED';
                         this.cellStatusMap[`${rIdx}_${cIdx}`] = 'NOT_MAPPED';
                     }
                     continue;
@@ -844,6 +1082,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const parsedMonth = TemporalEngine.parseMonthYear(monthCell);
 
                     if (!parsedMonth) {
+                        this.automaticCellStatusMap[`${rIdx}_${cIdx}`] = 'NOT_MAPPED';
                         this.cellStatusMap[`${rIdx}_${cIdx}`] = 'NOT_MAPPED';
                         continue;
                     }
@@ -925,6 +1164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         countNotMapped++;
                     }
 
+                    this.automaticCellStatusMap[`${rIdx}_${cIdx}`] = cellStatus;
                     this.cellStatusMap[`${rIdx}_${cIdx}`] = cellStatus;
                 }
 
@@ -936,6 +1176,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     itemsClassification.MATCH.push({ reportItem: reportItemName, driveItem: mappedDriveName });
                 }
             }
+
+            // Aplicação dos Overrides Manuais sobre cellStatusMap
+            const activeOverrides = OverridesEngine.overrides;
+            const overrideKeys = Object.keys(activeOverrides);
+
+            overrideKeys.forEach(cellKey => {
+                const ov = activeOverrides[cellKey];
+                if (ov && ov.status) {
+                    this.cellStatusMap[cellKey] = ov.status;
+                }
+            });
 
             const firstRow = this.resultMatrix[0] || [];
             const lastRow = this.resultMatrix.length > 0 ? this.resultMatrix[this.resultMatrix.length - 1] : [];
@@ -1026,6 +1277,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             itemsClassification: itemsClassification
                         }
                     }
+                },
+                {
+                    stepNum: 6,
+                    stepTitle: "Validação Manual e Trilha de Auditoria (Overrides)",
+                    rowCount: this.resultMatrix.length,
+                    colCount: maxCols,
+                    firstRow: firstRow.map(c => String(c || '').trim()),
+                    lastRow: lastRow.map(c => String(c || '').trim()),
+                    colHeaders: colHeadersWithIndices,
+                    matrix: this.resultMatrix,
+                    extraInfo: {
+                        overridesAuditSummary: {
+                            totalOverrides: overrideKeys.length,
+                            activeOverrides: activeOverrides,
+                            auditLogs: OverridesEngine.auditLogs
+                        }
+                    }
                 }
             ];
 
@@ -1033,7 +1301,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 { timestamp: new Date().toLocaleTimeString(), message: "✔ Dados recebidos do Processador Final.", isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Leitura Bruta do CSV validada: formato brasileiro mantido com vírgulas.`, isSuccess: true },
                 { timestamp: new Date().toLocaleTimeString(), message: `✔ Catálogo Oficial consultado (${OfficialCatalog.getAllMappingsCount()} regras registradas).`, isSuccess: true },
-                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true }
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ Comparação concluída (${countMatch} MATCHES, ${countDivergent} DIVERGENTES).`, isSuccess: true },
+                { timestamp: new Date().toLocaleTimeString(), message: `✔ ${overrideKeys.length} ajustes manuais (Overrides) aplicados à camada de apresentação.`, isSuccess: true }
             ];
 
             this.resultInspector = {
@@ -1054,7 +1323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentInspectorTimelineLogs = [];
 
     // ------------------------------------------------------------------------
-    // 7. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
+    // 9. MÓDULO MATEMÁTICO TEMPORAL CENTRALIZADO (TemporalEngine)
     // ------------------------------------------------------------------------
 
     const TEMPORAL_REFERENCE = {
@@ -1133,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ------------------------------------------------------------------------
-    // 8. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
+    // 10. CONFIGURAÇÕES DE TRATAMENTO SIGA & RECONHECIMENTO DE MÊS
     // ------------------------------------------------------------------------
 
     const LINHAS_INICIAIS_REMOVIDAS = 4;
@@ -1228,7 +1497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 9. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
+    // 11. MÓDULO INSPETOR DO PIPELINE (Pipeline Inspector Engine)
     // ------------------------------------------------------------------------
 
     function resetInspectorData() {
@@ -1332,6 +1601,44 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="step-info-value">${lastRowStr}</span>
                 </div>
             `;
+
+            if (step.extraInfo && step.extraInfo.overridesAuditSummary) {
+                const ovSummary = step.extraInfo.overridesAuditSummary;
+                const activeKeys = Object.keys(ovSummary.activeOverrides);
+
+                const rowsHtml = activeKeys.map(key => {
+                    const ov = ovSummary.activeOverrides[key];
+                    const [r, c] = key.split('_');
+                    const colLetter = getExcelColumnName(parseInt(c, 10));
+                    return `
+                        <tr>
+                            <td><b>Célula ${colLetter}${parseInt(r, 10) + 1}</b></td>
+                            <td><span class="topic-badge-count">${ov.status}</span></td>
+                            <td>${ov.user}</td>
+                            <td>${ov.timestamp}</td>
+                            <td><em>"${ov.reason}"</em></td>
+                        </tr>
+                    `;
+                }).join('');
+
+                detailsBlock.innerHTML += `
+                    <div style="margin-top: 0.5rem; overflow-x: auto;">
+                        <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--accent-color);">✏️ Painel de Validação Manual (Overrides Ativos: ${ovSummary.totalOverrides}):</h4>
+                        <table class="match-table">
+                            <thead>
+                                <tr>
+                                    <th>Célula Alterada</th>
+                                    <th>Status Manual</th>
+                                    <th>Unidade / Usuário</th>
+                                    <th>Data / Hora</th>
+                                    <th>Justificativa / Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml || '<tr><td colspan="5">Nenhuma alteração manual registrada nesta sessão.</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
 
             if (step.extraInfo && step.extraInfo.csvInspectorDetails) {
                 const csvDetails = step.extraInfo.csvInspectorDetails;
@@ -1711,7 +2018,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 10. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
+    // 12. MOTOR DE REGRAS SIGA (Treatment Pipeline Engine)
     // ------------------------------------------------------------------------
 
     function removeTopRowsRule(matrix, count = LINHAS_INICIAIS_REMOVIDAS) {
@@ -1934,7 +2241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 11. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
+    // 13. MÓDULO DO RESUMO FINANCEIRO (SIGA COM MONEY ENGINE)
     // ------------------------------------------------------------------------
 
     function calculateFinancialSummary(matrix) {
@@ -2044,7 +2351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 12. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
+    // 14. GERENCIADOR DO WIZARD DE 5 ETAPAS & SESSÃO MINIMALISTA
     // ------------------------------------------------------------------------
 
     function updateWizardUI() {
@@ -2554,7 +2861,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 13. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
+    // 15. INTERFACE & NAVEGAÇÃO POR ABAS (UI Controller)
     // ------------------------------------------------------------------------
 
     function viewReportSheetInTable() {
@@ -2626,7 +2933,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentInspectorSteps = FinalProcessor.resultInspector.steps;
         currentInspectorTimelineLogs = FinalProcessor.resultInspector.timelineLogs;
 
-        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final)";
+        inspectorSheetTitle.textContent = "🔍 Inspector do Pipeline (Resultado Final & Overrides)";
         inspectorSheetSubtitle.textContent = "Painel Analítico de Gestão e Cruzamento de Dados.";
 
         summaryContainer.classList.add('hidden');
@@ -2674,6 +2981,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
         initTabNavigation();
         ResultViewEngine.init();
+
+        // Modais e Eventos de Rastreabilidade / Overrides
+        const btnCloseDrillDown = document.getElementById('btnCloseDrillDown');
+        const btnDismissDrillDown = document.getElementById('btnDismissDrillDown');
+        if (btnCloseDrillDown) btnCloseDrillDown.addEventListener('click', () => TraceabilityEngine.closeModal());
+        if (btnDismissDrillDown) btnDismissDrillDown.addEventListener('click', () => TraceabilityEngine.closeModal());
+
+        const btnCloseOverrideModal = document.getElementById('btnCloseOverrideModal');
+        const btnCancelOverride = document.getElementById('btnCancelOverride');
+        if (btnCloseOverrideModal) btnCloseOverrideModal.addEventListener('click', () => OverridesEngine.closeModal());
+        if (btnCancelOverride) btnCancelOverride.addEventListener('click', () => OverridesEngine.closeModal());
+
+        const modalOverride = document.getElementById('cellOverrideMenuModal');
+        if (modalOverride) {
+            const statusBtns = modalOverride.querySelectorAll('.btn-status-choice');
+            statusBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    statusBtns.forEach(b => b.classList.remove('selected'));
+                    e.currentTarget.classList.add('selected');
+                });
+            });
+
+            const btnSaveOverride = document.getElementById('btnSaveOverride');
+            if (btnSaveOverride) {
+                btnSaveOverride.addEventListener('click', () => {
+                    const selectedBtn = modalOverride.querySelector('.btn-status-choice.selected');
+                    if (!selectedBtn) {
+                        alert('Selecione um status para aplicar.');
+                        return;
+                    }
+                    const status = selectedBtn.dataset.status;
+                    const reasonInput = document.getElementById('overrideReasonInput');
+                    const reason = reasonInput ? reasonInput.value.trim() : '';
+
+                    if (OverridesEngine.activeCellKey) {
+                        OverridesEngine.setOverride(OverridesEngine.activeCellKey, status, reason);
+                        OverridesEngine.closeModal();
+                    }
+                });
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const drillBtn = e.target.closest('.btn-drill-down');
+            if (drillBtn) {
+                e.stopPropagation();
+                const itemName = drillBtn.dataset.item;
+                if (itemName) {
+                    TraceabilityEngine.openModal(itemName);
+                }
+            }
+        });
     }
 
     function handleFileSelect(event) {
@@ -2736,11 +3095,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         FinalProcessor.isReady = false;
         FinalProcessor.resultMatrix = [];
+        FinalProcessor.automaticCellStatusMap = {};
         FinalProcessor.cellStatusMap = {};
 
         ResultViewEngine.activeMode = 'planilha';
         ResultViewEngine.itemSearchQuery = '';
 
+        OverridesEngine.reset();
         resetInspectorData();
 
         tableHead.innerHTML = '';
@@ -2775,7 +3136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 14. LEITURA DE ARQUIVO (FASE 1 - SUPORTE A CSV BRASILEIRO E EXCEL BRUTO)
+    // 16. LEITURA DE ARQUIVO (FASE 1 - SUPORTE A CSV BRASILEIRO E EXCEL BRUTO)
     // ------------------------------------------------------------------------
 
     function readSpreadsheetFile(file) {
@@ -2848,7 +3209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------------
-    // 15. RENDERIZAÇÃO DA TABELA (RECONSTRUÇÃO FIEL DE TEXTO BRUTO)
+    // 17. RENDERIZAÇÃO DA TABELA (RECONSTRUÇÃO FIEL DE TEXTO BRUTO)
     // ------------------------------------------------------------------------
 
     function renderSpreadsheetTable(matrix) {
@@ -2919,26 +3280,40 @@ document.addEventListener('DOMContentLoaded', () => {
             thRowIndex.textContent = actualRowIdx;
             tr.appendChild(thRowIndex);
 
+            const itemNameVal = rowData[0] !== undefined && rowData[0] !== null ? String(rowData[0]).trim() : '';
+
             for (let colIdx = 0; colIdx < maxCols; colIdx++) {
                 const td = document.createElement('td');
                 td.dataset.colIndex = colIdx;
                 td.dataset.rowIndex = actualRowIdx;
 
                 const rawCellValue = rowData[colIdx];
+                const cellStr = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
 
-                td.textContent = rawCellValue !== undefined && rawCellValue !== null ? String(rawCellValue) : '';
+                if (isResultView && colIdx === 0 && TraceabilityEngine.hasDrillDown(itemNameVal)) {
+                    td.innerHTML = `<b>${cellStr}</b> <button type="button" class="btn-drill-down" data-item="${itemNameVal}">▶</button>`;
+                } else {
+                    td.textContent = cellStr;
+                }
 
                 if (isResultView && colIdx > 0) {
-                    const status = FinalProcessor.cellStatusMap[`${actualRowIdx}_${colIdx}`];
+                    const cellKey = `${actualRowIdx}_${colIdx}`;
+                    const status = FinalProcessor.cellStatusMap[cellKey];
+                    const isOverridden = Boolean(OverridesEngine.getOverride(cellKey));
+
                     if (status === 'MATCH') {
                         td.classList.add('cell-match');
-                        td.title = "🟢 MATCH: Valor igual ao informado no Drive";
+                        td.title = "🟢 MATCH: Valor igual ao informado no Drive" + (isOverridden ? ' (Ajuste manual ativado)' : '');
                     } else if (status === 'MISSING') {
                         td.classList.add('cell-missing');
-                        td.title = "🟠 MISSING: Presente no Drive, mas ausente no Relatório";
+                        td.title = "🟠 MISSING: Presente no Drive, mas ausente no Relatório" + (isOverridden ? ' (Ajuste manual ativado)' : '');
                     } else if (status === 'DIVERGENT') {
                         td.classList.add('cell-divergent');
-                        td.title = "🔴 DIVERGENT: Valor divergente entre Relatório e Drive";
+                        td.title = "🔴 DIVERGENT: Valor divergente entre Relatório e Drive" + (isOverridden ? ' (Ajuste manual ativado)' : '');
+                    }
+
+                    if (isOverridden) {
+                        td.classList.add('cell-manually-overridden');
                     }
                 }
 
@@ -3010,6 +3385,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         td.classList.add('cell-selected');
         appState.selectedCell = td;
+
+        const colIdx = parseInt(td.dataset.colIndex, 10);
+        const rowIdx = parseInt(td.dataset.rowIndex, 10);
+
+        if (appSession.activeViewSheet === 'result' && colIdx > 0 && !isNaN(rowIdx)) {
+            const matrix = FinalProcessor.resultMatrix;
+            const itemName = matrix[rowIdx] && matrix[rowIdx][0] ? String(matrix[rowIdx][0]).trim() : `Linha ${rowIdx}`;
+            const monthName = matrix[0] && matrix[0][colIdx] ? String(matrix[0][colIdx]).trim() : `Coluna ${getExcelColumnName(colIdx)}`;
+
+            OverridesEngine.openModal(`${rowIdx}_${colIdx}`, itemName, monthName);
+        }
     }
 
     initEvents();

@@ -1335,3 +1335,157 @@ body {
 .origin-drive { background-color: #fef3c7; color: #92400e; }
 .origin-sigss { background-color: #f3e8ff; color: #6b21a8; }
 
+/* --------------------------------------------------------------------------
+   11. ESTILOS DE MODAIS DE RASTREABILIDADE & VALIDAÇÃO MANUAL
+   -------------------------------------------------------------------------- */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.modal-box {
+    background-color: #ffffff;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    width: 100%;
+    max-width: 540px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+.modal-box.modal-lg {
+    max-width: 900px;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    background-color: #f8fafc;
+}
+
+.modal-title {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.modal-sub {
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+}
+
+.btn-close-modal {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+}
+
+.btn-close-modal:hover {
+    color: var(--text-primary);
+    background-color: #e2e8f0;
+}
+
+.modal-body {
+    padding: 1.25rem 1.5rem;
+}
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    background-color: #f8fafc;
+}
+
+.btn-drill-down {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background-color: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-drill-down:hover {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.btn-status-choice {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0.65rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    width: 100%;
+    text-align: left;
+}
+
+.btn-status-match { background-color: #dcfce7; color: #166534; border-color: #86efac; }
+.btn-status-divergent { background-color: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.btn-status-missing { background-color: #ffedd5; color: #9a3412; border-color: #fdba74; }
+.btn-status-notmapped { background-color: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+.btn-status-restore { background-color: #e0f2fe; color: #0369a1; border-color: #7dd3fc; }
+
+.btn-status-choice:hover {
+    filter: brightness(0.95);
+    transform: translateX(2px);
+}
+
+.btn-status-choice.selected {
+    box-shadow: 0 0 0 2px var(--text-primary);
+}
+
+.excel-table td.cell-manually-overridden {
+    position: relative;
+}
+
+.excel-table td.cell-manually-overridden::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--accent-color);
+}
+
+

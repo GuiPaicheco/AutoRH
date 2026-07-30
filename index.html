@@ -231,6 +231,72 @@
         </main>
     </div>
 
+    <!-- MODAL DE RASTREABILIDADE & DRILL-DOWN DE ORIGEM -->
+    <div class="modal-backdrop hidden" id="drillDownModal">
+        <div class="modal-box modal-lg">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="drillDownTitle">🔍 Rastreabilidade de Origem: Hora Extra</h3>
+                    <p class="modal-sub" id="drillDownSubtitle">Lançamentos individuais extraídos das planilhas tratadas do SIGA</p>
+                </div>
+                <button type="button" class="btn-close-modal" id="btnCloseDrillDown">✕</button>
+            </div>
+            <div class="modal-body" style="overflow-x: auto; max-height: 60vh;">
+                <table class="inspector-preview-table" id="drillDownTable">
+                    <thead>
+                        <tr>
+                            <th>Servidor</th>
+                            <th>Matrícula</th>
+                            <th>Competência</th>
+                            <th>Qtd. Horas</th>
+                            <th>Valor (R$)</th>
+                            <th>Origem</th>
+                            <th>Arquivo Utilizado</th>
+                            <th>Linha de Origem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="drillDownTableBody"></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="btnDismissDrillDown">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE VALIDAÇÃO MANUAL & OVERRIDES DA CÉLULA -->
+    <div class="modal-backdrop hidden" id="cellOverrideMenuModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" id="overrideModalTitle">✏️ Validação Manual da Célula</h3>
+                    <p class="modal-sub" id="overrideModalSubtitle">Altere o status visual e registre uma justificativa para auditoria.</p>
+                </div>
+                <button type="button" class="btn-close-modal" id="btnCloseOverrideModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label class="form-label" style="font-weight: 700;">Selecione o Novo Status:</label>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                        <button type="button" class="btn-status-choice btn-status-match" data-status="MATCH">🟢 Marcar como Correto (MATCH)</button>
+                        <button type="button" class="btn-status-choice btn-status-divergent" data-status="DIVERGENT">🔴 Marcar como Divergente (DIVERGENT)</button>
+                        <button type="button" class="btn-status-choice btn-status-missing" data-status="MISSING">🟠 Marcar como Faltante (MISSING)</button>
+                        <button type="button" class="btn-status-choice btn-status-notmapped" data-status="NOT_MAPPED">⚪ Marcar como Sem Correspondência (NOT_MAPPED)</button>
+                        <button type="button" class="btn-status-choice btn-status-restore" data-status="RESTORE">🔄 Restaurar Resultado Automático</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="overrideReasonInput" class="form-label" style="font-weight: 700;">Justificativa / Motivo (Recomendado):</label>
+                    <input type="text" class="dashboard-item-search-input" id="overrideReasonInput" placeholder="Ex: Conferido via extrato de ajuste físico...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="btnCancelOverride">Cancelar</button>
+                <button type="button" class="btn-primary" id="btnSaveOverride">Salvar Ajuste Manual</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts da Aplicação -->
     <script src="js/app.js"></script>
 </body>
