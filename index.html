@@ -181,6 +181,7 @@
                         <button type="button" class="btn-result-mode" data-mode="item">📋 Por Item</button>
                         <button type="button" class="btn-result-mode" data-mode="mes">📅 Por Mês</button>
                         <button type="button" class="btn-result-mode" data-mode="origem">🏢 Por Tipo de Lançamento</button>
+                        <button type="button" class="btn-result-mode" id="btnOpenJustificationGenerator" style="background-color: #fef3c7; color: #92400e; border-color: #fcd34d;">📝 Gerador de Justificativas</button>
                     </div>
                 </div>
 
@@ -293,6 +294,47 @@
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" id="btnCancelOverride">Cancelar</button>
                 <button type="button" class="btn-primary" id="btnSaveOverride">Salvar Ajuste Manual</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL GERADOR DE JUSTIFICATIVAS -->
+    <div class="modal-backdrop hidden" id="justificationModal">
+        <div class="modal-box modal-lg">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">📝 Gerador de Justificativas</h3>
+                    <p class="modal-sub">Ferramenta independente para seleção manual de Itens de Custo e geração de texto padronizado.</p>
+                </div>
+                <button type="button" class="btn-close-modal" id="btnCloseJustificationModal">✕</button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <!-- Barra de Ações Rápidas -->
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;">
+                    <button type="button" class="btn-secondary" id="btnSelectAllItems">Marcar Todos</button>
+                    <button type="button" class="btn-secondary" id="btnUnselectAllItems">Desmarcar Todos</button>
+                    <button type="button" class="btn-secondary" id="btnInvertSelection">Inverter Seleção</button>
+                </div>
+
+                <!-- Checklist Grid -->
+                <div class="checklist-grid" id="justificationChecklistGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.5rem; max-height: 240px; overflow-y: auto; border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; background: #f8fafc; margin-bottom: 1rem;"></div>
+
+                <!-- Botão Gerar -->
+                <div style="margin-bottom: 1rem;">
+                    <button type="button" class="btn-primary" id="btnGenerateJustificationText" style="width: 100%;">
+                        ⚙️ Gerar Justificativa
+                    </button>
+                </div>
+
+                <!-- Campo de Texto Editável -->
+                <div class="form-group">
+                    <label for="justificationOutputText" class="form-label" style="font-weight: 700;">Texto da Justificativa Gerada (Editável):</label>
+                    <textarea id="justificationOutputText" rows="8" class="dashboard-item-search-input" style="width: 100%; font-family: monospace; font-size: 0.85rem; line-height: 1.4; padding: 0.75rem; border-color: var(--border-dark);" placeholder="Selecione os itens de custo acima e clique em 'Gerar Justificativa'..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="btnDismissJustificationModal">Fechar</button>
+                <button type="button" class="btn-primary" id="btnCopyJustificationText">📋 Copiar Texto</button>
             </div>
         </div>
     </div>

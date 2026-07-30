@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Rastreabilidade & Validação Manual Overrides)
+ * Importador de Planilhas - app.js (Gerador de Justificativas Independente)
  * ----------------------------------------------------------------------------
  * Filosofia: A tela Resultado expande com:
  * 1. Rastreabilidade & Drill-Down: Módulo TraceabilityEngine que extrai e apresenta
@@ -10,6 +10,9 @@
  *    sobreposição não destrutiva, permitindo alterar manualmente status de células
  *    (MATCH, DIVERGENT, MISSING, NOT_MAPPED) mantendo 100% dos dados originais e
  *    registrando uma Trilha de Auditoria detalhada no Inspector.
+ * 3. Gerador de Justificativas Independente: Módulo JustificationGeneratorEngine com
+ *    checklist de 36 itens de custo em constante única (COST_ITEMS_CONFIG), botões de
+ *    seleção, geração de texto padronizado editável e cópia para área de transferência.
  * ============================================================================
  */
 
@@ -90,6 +93,165 @@ document.addEventListener('DOMContentLoaded', () => {
         currentStep: 1,
         activeTab: 'viewer',
         selectedCell: null
+    };
+
+    // ------------------------------------------------------------------------
+    // CONFIGURAÇÃO CENTRALIZADA DE ITENS DE CUSTO (GERADOR DE JUSTIFICATIVAS)
+    // ------------------------------------------------------------------------
+
+    const COST_ITEMS_CONFIG = [
+        "Aluguel de Imóveis",
+        "Aluguel de Veículos",
+        "Remuneração a Pessoal - Estatutário Federal",
+        "Benefício a Pessoal - Estatutário Federal",
+        "Gás Engarrafado GLP",
+        "Gases Medicinais",
+        "Serviço de Água e Esgoto",
+        "Serviço de Manutenção e Conservação de Máquinas e Equipamentos",
+        "Serviço de Lavanderia",
+        "Serviços de Comunicação de Dados (internet e outros)",
+        "Serviços de Controle de Vetores e Pragas Urbanas",
+        "Serviços de Cópias e Reprodução de Documentos",
+        "Serviços de Energia Elétrica",
+        "Serviços de Limpeza e Conservação",
+        "Serviços de Tecnologia da Informação",
+        "Serviços de Telecomunicações (Fixa)",
+        "Serviços de Telecomunicações - (Telefonia Móvel)",
+        "Serviços Laboratoriais",
+        "Vacinas",
+        "Material de Limpeza",
+        "Material Odontológico",
+        "Serviços de Profissionais de Saúde - Não Médicos",
+        "Serviços Médicos",
+        "Remuneração a pessoal - CLT",
+        "Benefícios a pessoal - CLT",
+        "Remuneração a Pessoal - Estatutário Municipal",
+        "Benefícios a Pessoal - Estatutário Municipal",
+        "Remuneração a Pessoal - Estatutário",
+        "Benefícios a Pessoal - Estatutário",
+        "Hora Extra",
+        "Fórmulas Nutricionais",
+        "Material de Proteção e Segurança",
+        "Material de Copa e Cozinha",
+        "Material de Expediente",
+        "Material Médico-Hospitalar",
+        "Medicamentos"
+    ];
+
+    // ------------------------------------------------------------------------
+    // MÓDULO INDEPENDENTE: GERADOR DE JUSTIFICATIVAS (JustificationGeneratorEngine)
+    // ------------------------------------------------------------------------
+
+    const JustificationGeneratorEngine = {
+        suggestedItems: [],
+
+        init() {
+            const container = document.getElementById('justificationChecklistGrid');
+            if (!container) return;
+
+            container.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+
+            COST_ITEMS_CONFIG.forEach((item, idx) => {
+                const label = document.createElement('label');
+                label.className = 'checklist-item-label';
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.gap = '0.5rem';
+                label.style.fontSize = '0.85rem';
+                label.style.cursor = 'pointer';
+                label.style.padding = '0.2rem 0.4rem';
+                label.style.borderRadius = '4px';
+
+                const chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.value = item;
+                chk.id = `justification_chk_${idx}`;
+
+                const span = document.createElement('span');
+                span.textContent = item;
+
+                label.appendChild(chk);
+                label.appendChild(span);
+                fragment.appendChild(label);
+            });
+
+            container.appendChild(fragment);
+        },
+
+        selectAll() {
+            const container = document.getElementById('justificationChecklistGrid');
+            if (!container) return;
+            container.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = true);
+        },
+
+        unselectAll() {
+            const container = document.getElementById('justificationChecklistGrid');
+            if (!container) return;
+            container.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+        },
+
+        invertSelection() {
+            const container = document.getElementById('justificationChecklistGrid');
+            if (!container) return;
+            container.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = !c.checked);
+        },
+
+        generateText() {
+            const container = document.getElementById('justificationChecklistGrid');
+            const output = document.getElementById('justificationOutputText');
+            if (!container || !output) return;
+
+            const selected = [];
+            container.querySelectorAll('input[type="checkbox"]:checked').forEach(c => {
+                selected.push(c.value);
+            });
+
+            if (selected.length === 0) {
+                alert('Selecione ao menos um item de custo no checklist.');
+                return;
+            }
+
+            const itemsText = selected.map(item => `- ${item};`).join('\n');
+
+            const template = `Palavra Chave:\nItens de Custo - Movimentação Incomum\n\nItens de Custos que não houveram valores a serem lançados no mês referente ou que houveram alguma divergência:\n\n${itemsText}\n\n(Assim como os custos que podem não estar presentes na tabela da competência analisada.)`;
+
+            output.value = template;
+        },
+
+        copyText() {
+            const output = document.getElementById('justificationOutputText');
+            if (!output || !output.value.trim()) {
+                alert('Não há texto gerado para copiar.');
+                return;
+            }
+
+            output.select();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(output.value).then(() => {
+                    alert('✔ Texto da justificativa copiado para a área de transferência com sucesso!');
+                }).catch(() => {
+                    document.execCommand('copy');
+                    alert('✔ Texto copiado para a área de transferência!');
+                });
+            } else {
+                document.execCommand('copy');
+                alert('✔ Texto copiado para a área de transferência!');
+            }
+        },
+
+        openModal() {
+            const modal = document.getElementById('justificationModal');
+            if (modal) {
+                this.init();
+                modal.classList.remove('hidden');
+            }
+        },
+
+        closeModal() {
+            const modal = document.getElementById('justificationModal');
+            if (modal) modal.classList.add('hidden');
+        }
     };
 
     // ------------------------------------------------------------------------
@@ -476,8 +638,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
 
     const OverridesEngine = {
-        overrides: {}, // cellKey `${rowIdx}_${colIdx}` => { status, reason, timestamp, user }
-        auditLogs: [], // list of actions
+        overrides: {},
+        auditLogs: [],
         activeCellKey: null,
 
         setOverride(cellKey, newStatus, reason = '') {
@@ -605,8 +767,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!resultModeSelectorBar) return;
             const modeBtns = resultModeSelectorBar.querySelectorAll('.btn-result-mode');
             modeBtns.forEach(btn => {
+                if (btn.id === 'btnOpenJustificationGenerator') return;
                 btn.addEventListener('click', (e) => {
-                    modeBtns.forEach(b => b.classList.remove('active'));
+                    modeBtns.forEach(b => {
+                        if (b.id !== 'btnOpenJustificationGenerator') b.classList.remove('active');
+                    });
                     e.currentTarget.classList.add('active');
                     this.activeMode = e.currentTarget.dataset.mode;
                     this.render();
@@ -2981,6 +3146,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         initTabNavigation();
         ResultViewEngine.init();
+
+        // Botão Gerador de Justificativas
+        const btnOpenJustification = document.getElementById('btnOpenJustificationGenerator');
+        if (btnOpenJustification) {
+            btnOpenJustification.addEventListener('click', () => JustificationGeneratorEngine.openModal());
+        }
+
+        const btnCloseJustification = document.getElementById('btnCloseJustificationModal');
+        const btnDismissJustification = document.getElementById('btnDismissJustificationModal');
+        if (btnCloseJustification) btnCloseJustification.addEventListener('click', () => JustificationGeneratorEngine.closeModal());
+        if (btnDismissJustification) btnDismissJustification.addEventListener('click', () => JustificationGeneratorEngine.closeModal());
+
+        const btnSelectAll = document.getElementById('btnSelectAllItems');
+        const btnUnselectAll = document.getElementById('btnUnselectAllItems');
+        const btnInvert = document.getElementById('btnInvertSelection');
+        const btnGenerateText = document.getElementById('btnGenerateJustificationText');
+        const btnCopyText = document.getElementById('btnCopyJustificationText');
+
+        if (btnSelectAll) btnSelectAll.addEventListener('click', () => JustificationGeneratorEngine.selectAll());
+        if (btnUnselectAll) btnUnselectAll.addEventListener('click', () => JustificationGeneratorEngine.unselectAll());
+        if (btnInvert) btnInvert.addEventListener('click', () => JustificationGeneratorEngine.invertSelection());
+        if (btnGenerateText) btnGenerateText.addEventListener('click', () => JustificationGeneratorEngine.generateText());
+        if (btnCopyText) btnCopyText.addEventListener('click', () => JustificationGeneratorEngine.copyText());
 
         // Modais e Eventos de Rastreabilidade / Overrides
         const btnCloseDrillDown = document.getElementById('btnCloseDrillDown');
