@@ -1,20 +1,51 @@
 /**
  * ============================================================================
- * Importador de Planilhas - app.js (Gerador de Justificativas Independente)
+ * Importador de Planilhas - app.js (Sprint de Compatibilidade Chrome 109 v1.0.1)
  * ----------------------------------------------------------------------------
- * Filosofia: A tela Resultado expande com:
- * 1. Rastreabilidade & Drill-Down: Módulo TraceabilityEngine que extrai e apresenta
- *    a composição detalhada de itens agregados (ex: Hora Extra) diretamente das
- *    planilhas tratadas do SIGA.
- * 2. Validação Manual & Overrides: Módulo OverridesEngine que atua como camada de
- *    sobreposição não destrutiva, permitindo alterar manualmente status de células
- *    (MATCH, DIVERGENT, MISSING, NOT_MAPPED) mantendo 100% dos dados originais e
- *    registrando uma Trilha de Auditoria detalhada no Inspector.
- * 3. Gerador de Justificativas Independente: Módulo JustificationGeneratorEngine com
- *    checklist de 36 itens de custo em constante única (COST_ITEMS_CONFIG), botões de
- *    seleção, geração de texto padronizado editável e cópia para área de transferência.
+ * Filosofia & Compatibilidade:
+ * 1. Mínimo Suportado: Google Chrome 109.0.5414.120 (64-bits) e versões superiores.
+ * 2. Polyfills & Fallbacks Seguros: Object.hasOwn, structuredClone, Array.prototype.findLast,
+ *    Clipboard API com fallback para document.execCommand('copy').
+ * 3. Modo de Diagnóstico (DiagnosticEngine): Auditoria técnica em tempo real com
+ *    registro de versão do Chrome, User-Agent, suporte a APIs, métricas de tempo de
+ *    execução do pipeline, logs de erro e exportação formatada para suporte.
+ * 4. Integridade Total das Funcionalidades: Nenhuma regra de negócio, layout ou
+ *    comportamento validado em v1.0.0 foi alterado ou removido.
  * ============================================================================
  */
+
+// ----------------------------------------------------------------------------
+// POLYFILLS E SAFEGUARDS DE COMPATIBILIDADE (CHROME 109+)
+// ----------------------------------------------------------------------------
+if (!Object.hasOwn) {
+    Object.hasOwn = function (object, property) {
+        if (object === null || object === undefined) return false;
+        return Object.prototype.hasOwnProperty.call(object, property);
+    };
+}
+
+if (typeof window !== 'undefined' && !window.structuredClone) {
+    window.structuredClone = function (obj) {
+        if (obj === undefined) return undefined;
+        return JSON.parse(JSON.stringify(obj));
+    };
+}
+
+if (!Array.prototype.findLast) {
+    Array.prototype.findLast = function (predicate, thisArg) {
+        if (this == null) throw new TypeError('Array.prototype.findLast chamado em null ou undefined');
+        const list = Object(this);
+        const length = list.length >>> 0;
+        if (typeof predicate !== 'function') throw new TypeError('predicate deve ser uma função');
+        for (let i = length - 1; i >= 0; i--) {
+            if (i in list) {
+                const element = list[i];
+                if (predicate.call(thisArg, element, i, list)) return element;
+            }
+        }
+        return undefined;
+    };
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------------
@@ -93,6 +124,169 @@ document.addEventListener('DOMContentLoaded', () => {
         currentStep: 1,
         activeTab: 'viewer',
         selectedCell: null
+    };
+
+    // ------------------------------------------------------------------------
+    // MÓDULO DE DIAGNÓSTICO (DiagnosticEngine - Chrome 109 Compatibility v1.0.1)
+    // ------------------------------------------------------------------------
+
+    const DiagnosticEngine = {
+        appVersion: "1.0.1 (Sprint de Compatibilidade Chrome 109)",
+        minChromeVersion: "109.0.5414.120",
+        logs: [],
+        startTime: (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(),
+
+        getChromeVersion() {
+            try {
+                const rawUA = navigator.userAgent || '';
+                const match = rawUA.match(/Chrome\/([0-9.]+)/);
+                return match ? match[1] : 'Desconhecida / Não-Chrome';
+            } catch (err) {
+                return 'Erro ao detectar';
+            }
+        },
+
+        isChrome109OrHigher() {
+            try {
+                const verStr = this.getChromeVersion();
+                if (verStr === 'Desconhecida / Não-Chrome' || verStr === 'Erro ao detectar') return true;
+                const parts = verStr.split('.').map(n => parseInt(n, 10));
+                return parts[0] >= 109;
+            } catch (err) {
+                return true;
+            }
+        },
+
+        log(level, category, message, data = null) {
+            try {
+                const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                const entry = {
+                    timestamp: new Date().toLocaleTimeString(),
+                    elapsedMs: Math.round(nowMs - this.startTime),
+                    level: String(level).toUpperCase(),
+                    category: String(category),
+                    message: String(message),
+                    data: data ? JSON.parse(JSON.stringify(data)) : null
+                };
+                this.logs.push(entry);
+                console.log(`[Diagnostic][${entry.level}][${entry.category}] ${entry.message}`, data || '');
+            } catch (err) {
+                console.log(`[Diagnostic] ${message}`);
+            }
+        },
+
+        runEnvironmentAudit() {
+            this.log('INFO', 'Audit', 'Iniciando Auditoria de Ambiente (Chrome 109+)...');
+            const chromeVer = this.getChromeVersion();
+            const isOkVer = this.isChrome109OrHigher();
+
+            const apisCheck = {
+                FileReader: typeof FileReader !== 'undefined',
+                Uint8Array: typeof Uint8Array !== 'undefined',
+                XLSXLibrary: typeof XLSX !== 'undefined',
+                ClipboardAPI: (navigator && navigator.clipboard) ? 'Suportado' : 'Fallback execCommand Ativo',
+                StructuredClone: typeof structuredClone !== 'undefined' ? 'Suportado (Chrome 98+)' : 'Fallback JSON Clone',
+                ChromeRuntime: (typeof chrome !== 'undefined' && chrome.runtime) ? 'API Extension Ativa' : 'Web App Standalone',
+                UserAgent: navigator.userAgent
+            };
+
+            this.log('INFO', 'Environment', `Navegador: ${chromeVer} (Mínimo Chrome 109: ${isOkVer ? 'OK' : 'AVISO: Versão Legada'})`);
+            this.log('INFO', 'APIs', 'Status de Compatibilidade das APIs Web/DOM', apisCheck);
+            return apisCheck;
+        },
+
+        generateReport() {
+            const chromeVer = this.getChromeVersion();
+            const env = this.runEnvironmentAudit();
+
+            let reportText = `====================================================\n`;
+            reportText += `   RELATÓRIO DE DIAGNÓSTICO DE COMPATIBILIDADE     \n`;
+            reportText += `   Projeto: AutoRH / SIGSS-AutoIndex               \n`;
+            reportText += `   Versão da Aplicação: ${this.appVersion}        \n`;
+            reportText += `   Data/Hora: ${new Date().toLocaleString()}       \n`;
+            reportText += `====================================================\n\n`;
+
+            reportText += `[1] ESPECIFICAÇÕES DO SISTEMA E NAVEGADOR:\n`;
+            reportText += `- Versão do Chrome: ${chromeVer}\n`;
+            reportText += `- User-Agent: ${navigator.userAgent}\n`;
+            reportText += `- Plataforma: ${navigator.platform || 'Desconhecida'}\n`;
+            reportText += `- URL de Execução: ${window.location.href}\n`;
+            reportText += `- Status Chrome 109+: ${this.isChrome109OrHigher() ? '✔ COMPATÍVEL (Chrome >= 109)' : '⚠️ ATENÇÃO: Versão < 109'}\n\n`;
+
+            reportText += `[2] COMPATIBILIDADE DE APIS E RECURSOS:\n`;
+            reportText += `- FileReader API: ${env.FileReader ? '✔ OK' : '❌ AUSENTE'}\n`;
+            reportText += `- Uint8Array (ArrayBuffer): ${env.Uint8Array ? '✔ OK' : '❌ AUSENTE'}\n`;
+            reportText += `- Biblioteca SheetJS (XLSX): ${env.XLSXLibrary ? '✔ OK' : '❌ NÃO CARREGADA'}\n`;
+            reportText += `- Clipboard API: ${env.ClipboardAPI}\n`;
+            reportText += `- StructuredClone: ${env.StructuredClone}\n`;
+            reportText += `- Extensão Chrome Runtime: ${env.ChromeRuntime}\n\n`;
+
+            reportText += `[3] RESUMO DE EXECUÇÃO DA SESSÃO:\n`;
+            reportText += `- Sessão Ativa: ${appSession.isActive ? 'SIM' : 'NÃO'}\n`;
+            reportText += `- Unidade de Saúde: ${appSession.unitName}\n`;
+            reportText += `- Relatório Importado: ${appSession.reportFile ? appSession.reportFile.name : 'Nenhum'}\n`;
+            reportText += `- Planilhas do SIGA: ${appSession.sigaCollection.length} arquivo(s)\n`;
+            reportText += `- Planilha do Drive: ${appSession.driveFile ? appSession.driveFile.name : 'Nenhuma'}\n`;
+            reportText += `- Overrides Manuais Ativos: ${Object.keys(OverridesEngine.overrides).length}\n\n`;
+
+            reportText += `[4] LOGS CRONOLÓGICOS DE DIAGNÓSTICO (${this.logs.length} registros):\n`;
+            this.logs.forEach(l => {
+                reportText += `[${l.timestamp}][+${l.elapsedMs}ms][${l.level}][${l.category}] ${l.message}\n`;
+            });
+
+            return reportText;
+        },
+
+        openModal() {
+            const modal = document.getElementById('diagnosticModal');
+            const output = document.getElementById('diagnosticReportOutput');
+            const summary = document.getElementById('diagnosticSummaryBox');
+
+            if (!modal || !output) return;
+
+            const report = this.generateReport();
+            output.value = report;
+
+            if (summary) {
+                summary.innerHTML = `
+                    <div style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+                        <div>
+                            <strong>Navegador:</strong> Chrome ${this.getChromeVersion()}<br>
+                            <strong>Status Chrome 109:</strong> <span style="color: ${this.isChrome109OrHigher() ? '#166534' : '#991b1b'}; font-weight: 700;">${this.isChrome109OrHigher() ? '✔ APROVADO' : '⚠️ ATENÇÃO'}</span>
+                        </div>
+                        <div>
+                            <strong>Versão App:</strong> v1.0.1 (Chrome 109 Compatible)<br>
+                            <strong>Logs Registrados:</strong> ${this.logs.length} eventos
+                        </div>
+                    </div>
+                `;
+            }
+
+            modal.classList.remove('hidden');
+        },
+
+        closeModal() {
+            const modal = document.getElementById('diagnosticModal');
+            if (modal) modal.classList.add('hidden');
+        },
+
+        copyReport() {
+            const output = document.getElementById('diagnosticReportOutput');
+            if (!output || !output.value.trim()) return;
+
+            output.select();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(output.value).then(() => {
+                    alert('✔ Logs de Diagnóstico copiados com sucesso para suporte técnico!');
+                }).catch(() => {
+                    document.execCommand('copy');
+                    alert('✔ Logs de Diagnóstico copiados!');
+                });
+            } else {
+                document.execCommand('copy');
+                alert('✔ Logs de Diagnóstico copiados!');
+            }
+        }
     };
 
     // ------------------------------------------------------------------------
@@ -217,6 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const template = `Palavra Chave:\nItens de Custo - Movimentação Incomum\n\nItens de Custos que não houveram valores a serem lançados no mês referente ou que houveram alguma divergência:\n\n${itemsText}\n\n(Assim como os custos que podem não estar presentes na tabela da competência analisada.)`;
 
             output.value = template;
+            DiagnosticEngine.log('INFO', 'Justification', `Justificativa gerada com ${selected.length} itens.`);
         },
 
         copyText() {
@@ -678,6 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            DiagnosticEngine.log('INFO', 'Override', `Status da célula ${cellKey} alterado para ${newStatus} (${user})`);
             FinalProcessor.process(appSession);
             ResultViewEngine.render();
         },
@@ -767,10 +963,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!resultModeSelectorBar) return;
             const modeBtns = resultModeSelectorBar.querySelectorAll('.btn-result-mode');
             modeBtns.forEach(btn => {
-                if (btn.id === 'btnOpenJustificationGenerator') return;
+                if (btn.id === 'btnOpenJustificationGenerator' || btn.id === 'btnOpenDiagnosticModal') return;
                 btn.addEventListener('click', (e) => {
                     modeBtns.forEach(b => {
-                        if (b.id !== 'btnOpenJustificationGenerator') b.classList.remove('active');
+                        if (b.id !== 'btnOpenJustificationGenerator' && b.id !== 'btnOpenDiagnosticModal') b.classList.remove('active');
                     });
                     e.currentTarget.classList.add('active');
                     this.activeMode = e.currentTarget.dataset.mode;
@@ -1166,7 +1362,8 @@ document.addEventListener('DOMContentLoaded', () => {
         resultInspector: { steps: [], timelineLogs: [] },
 
         process(sessionObj) {
-            console.log("%c[FinalProcessor] Executando cruzamento e aplicando camada de sobreposição Overrides...", "color: #059669; font-weight: bold; font-size: 13px;");
+            const startProcTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            DiagnosticEngine.log('INFO', 'Pipeline', 'Executando Cruzamento e Overrides...');
             
             if (!sessionObj || !sessionObj.reportMatrix || sessionObj.reportMatrix.length === 0) {
                 this.isReady = false;
@@ -1474,6 +1671,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 steps: resultSteps,
                 timelineLogs: resultLogs
             };
+
+            const procElapsed = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startProcTime);
+            DiagnosticEngine.log('INFO', 'Pipeline', `Cruzamento Finalizado em ${procElapsed}ms`, {
+                totalComparisons,
+                countMatch,
+                countDivergent,
+                countMissing,
+                overrideCount: overrideKeys.length
+            });
 
             return {
                 status: 'Resultado Final Gerado',
@@ -2767,6 +2973,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function processReportStep(file, rawMatrix) {
         resetInspectorData();
+        DiagnosticEngine.log('INFO', 'Pipeline', `Processando Etapa 1: Relatório (${file.name})`);
 
         let extractedUnit = 'Unidade de Saúde';
         if (rawMatrix && rawMatrix.length > 1 && rawMatrix[1][0]) {
@@ -2860,6 +3067,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetInspectorData();
 
         const monthLabel = detectSigaMonth(rawMatrix, file.name);
+        DiagnosticEngine.log('INFO', 'Pipeline', `Processando Etapa 2: SIGA (${file.name} - ${monthLabel})`);
 
         const existingIdx = appSession.sigaCollection.findIndex(item => item.monthLabel === monthLabel);
         if (existingIdx !== -1) {
@@ -2915,6 +3123,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function processDriveStep(file, rawMatrix) {
         resetInspectorData();
+        DiagnosticEngine.log('INFO', 'Pipeline', `Processando Etapa 3: Drive (${file.name})`);
 
         const fileExt = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
 
@@ -3147,6 +3356,20 @@ document.addEventListener('DOMContentLoaded', () => {
         initTabNavigation();
         ResultViewEngine.init();
 
+        // Botão Modo de Diagnóstico (Chrome 109 Compatibility)
+        const btnOpenDiag = document.getElementById('btnOpenDiagnosticModal');
+        if (btnOpenDiag) {
+            btnOpenDiag.addEventListener('click', () => DiagnosticEngine.openModal());
+        }
+
+        const btnCloseDiag = document.getElementById('btnCloseDiagnosticModal');
+        const btnDismissDiag = document.getElementById('btnDismissDiagnosticModal');
+        const btnCopyDiag = document.getElementById('btnCopyDiagnosticReport');
+
+        if (btnCloseDiag) btnCloseDiag.addEventListener('click', () => DiagnosticEngine.closeModal());
+        if (btnDismissDiag) btnDismissDiag.addEventListener('click', () => DiagnosticEngine.closeModal());
+        if (btnCopyDiag) btnCopyDiag.addEventListener('click', () => DiagnosticEngine.copyReport());
+
         // Botão Gerador de Justificativas
         const btnOpenJustification = document.getElementById('btnOpenJustificationGenerator');
         if (btnOpenJustification) {
@@ -3221,6 +3444,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+
+        // Rodar auditoria de diagnostico na inicialização
+        DiagnosticEngine.runEnvironmentAudit();
+        DiagnosticEngine.log('INFO', 'System', 'Aplicação inicializada com sucesso (Chrome 109 Compatible v1.0.1)');
     }
 
     function handleFileSelect(event) {
@@ -3331,6 +3558,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileName = file.name.toLowerCase();
         const isCsvOrTsv = fileName.endsWith('.csv') || fileName.endsWith('.tsv');
 
+        DiagnosticEngine.log('INFO', 'IO', `Lendo arquivo "${file.name}" (${file.size} bytes)...`);
+
         if (isCsvOrTsv) {
             const textReader = new FileReader();
             textReader.onload = function (e) {
@@ -3345,6 +3574,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (err) {
                     console.error('Erro ao ler arquivo CSV:', err);
+                    DiagnosticEngine.log('ERROR', 'IO', `Erro ao ler CSV ${file.name}`, err);
                     alert('Não foi possível ler o arquivo CSV. Verifique o formato e a codificação do arquivo.');
                 }
             };
@@ -3379,6 +3609,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (error) {
                     console.error('Erro ao ler a planilha:', error);
+                    DiagnosticEngine.log('ERROR', 'IO', `Erro ao ler Excel ${file.name}`, error);
                     alert('Não foi possível ler o arquivo. Certifique-se de que o arquivo não está corrompido.');
                 }
             };

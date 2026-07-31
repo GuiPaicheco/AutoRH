@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "AutoRH / SIGSS-AutoIndex",
+  "version": "1.0.1",
+  "minimum_chrome_version": "109.0.5414.120",
+  "description": "Sistema Unificado de Leitura, Indexação e Cruzamento de Planilhas de Custos da Secretaria Municipal de Saúde de Betim - Compatibilidade Chrome 109",
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "AutoRH / SIGSS-AutoIndex"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "css/style.css",
+        "js/app.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

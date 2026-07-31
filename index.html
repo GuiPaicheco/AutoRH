@@ -28,7 +28,7 @@
                 </div>
                 <div class="brand-titles">
                     <h1 class="app-title">Painel de Análise Automática de Custos</h1>
-                    <span class="app-subtitle">Sistema Unificado de Leitura e Cruzamento de Planilhas</span>
+                    <span class="app-subtitle">Sistema Unificado de Leitura e Cruzamento de Planilhas (v1.0.1 - Chrome 109 Compatible)</span>
                 </div>
             </div>
 
@@ -182,6 +182,7 @@
                         <button type="button" class="btn-result-mode" data-mode="mes">📅 Por Mês</button>
                         <button type="button" class="btn-result-mode" data-mode="origem">🏢 Por Tipo de Lançamento</button>
                         <button type="button" class="btn-result-mode" id="btnOpenJustificationGenerator" style="background-color: #fef3c7; color: #92400e; border-color: #fcd34d;">📝 Gerador de Justificativas</button>
+                        <button type="button" class="btn-result-mode" id="btnOpenDiagnosticModal" style="background-color: #e0f2fe; color: #0369a1; border-color: #7dd3fc;">🩺 Modo de Diagnóstico</button>
                     </div>
                 </div>
 
@@ -335,6 +336,33 @@
             <div class="modal-footer">
                 <button type="button" class="btn-secondary" id="btnDismissJustificationModal">Fechar</button>
                 <button type="button" class="btn-primary" id="btnCopyJustificationText">📋 Copiar Texto</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL MODO DE DIAGNÓSTICO (Chrome 109 Compatibility v1.0.1) -->
+    <div class="modal-backdrop hidden" id="diagnosticModal">
+        <div class="modal-box modal-lg">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">🩺 Modo de Diagnóstico & Suporte Técnico</h3>
+                    <p class="modal-sub">Informações de compatibilidade do ambiente (Google Chrome 109+)</p>
+                </div>
+                <button type="button" class="btn-close-modal" id="btnCloseDiagnosticModal">✕</button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <!-- Summary Box -->
+                <div id="diagnosticSummaryBox" style="padding: 0.85rem 1rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 0.85rem; color: #166534; margin-bottom: 1rem;"></div>
+
+                <!-- Report Output Area -->
+                <div class="form-group">
+                    <label for="diagnosticReportOutput" class="form-label" style="font-weight: 700;">Relatório Completo de Diagnóstico (Logs Técnicos):</label>
+                    <textarea id="diagnosticReportOutput" rows="12" class="dashboard-item-search-input" style="width: 100%; font-family: monospace; font-size: 0.8rem; line-height: 1.4; padding: 0.75rem; border-color: var(--border-dark);" readonly></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="btnDismissDiagnosticModal">Fechar</button>
+                <button type="button" class="btn-primary" id="btnCopyDiagnosticReport">📋 Copiar Logs de Diagnóstico</button>
             </div>
         </div>
     </div>
